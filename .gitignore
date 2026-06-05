@@ -1,0 +1,63 @@
+# Dart/Flutter build artifacts
+.dart_tool/
+.packages
+build/
+pubspec.lock
+
+# Flutter generated
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Compiled binaries
+*.exe
+*.apk
+*.aab
+*.msix
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Server runtime data
+data/
+instances/
+
+# Database files
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+*_log.txt
+*_log_utf8.txt
+
+# Sensitive files
+*.pem
+private_key*
+licenses.txt
+
+# Android
+android/.gradle/
+android/local.properties
+android/captures/
+*.jks
+*.keystore
+
+# Temp
+/tmp/
+
+# Claude Code
+.claude/
+.agents/
+*.jsonl
+hata.txt
+
+# Auto-backup files accidentally written inside project dir
+inventra_app/C_/
