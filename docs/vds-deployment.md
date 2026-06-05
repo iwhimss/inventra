@@ -371,28 +371,98 @@ docker compose up -d
 
 ---
 
-## 9. İsteğe Bağlı: Nginx + SSL (HTTPS)
+## 9. İsteğe Bağlı: Nginx + SSL (HTTPS) + Cloudflare
 
 Sunucunuza bir domain bağladıysanız HTTPS üzerinden erişim sağlayabilirsiniz.
 
-> ⚠️ **Cloudflare kullanıyorsanız** SSL modunu **"Full"** olarak ayarlayın (Cloudflare Dashboard → SSL/TLS → Overview → Full).  
-> "Flexible" modda Cloudflare HTTP üzerinden bağlanır → Nginx'in HTTP→HTTPS yönlendirmesi POST body'yi sıfırlar → login çalışmaz.
+---
 
-### 9.1 Nginx ve Certbot kur
+### 9.A Cloudflare ile Kurulum (Önerilen)
+
+Cloudflare kullanıyorsanız bu bölümü takip edin. Cloudflare HTTPS'i kendi edge'inde sonlandırır; origin sunucusunda (VDS) SSL sertifikası **gerekmez**.
+
+#### 9.A.1 — Cloudflare SSL modunu ayarla
+
+```
+Cloudflare Dashboard → inventra.fatihdikec.me → SSL/TLS → Overview
+→ "Flexible" seç
+```
+
+> **Neden Flexible?**  
+> Cloudflare → VDS bağlantısı HTTP (port 80) üzerinden olur. Tarayıcı yine de HTTPS görür çünkü Cloudflare edge'inde SSL sonlandırır.  
+> "Full" mod seçilirse Cloudflare port **443**'e bağlanır — VDS'de port 443 bloğu ve SSL sertifikası olmadan Nginx yanlış server block'a düşerek başka bir subdomain'in içeriğini sunar.
+
+#### 9.A.2 — Nginx kur ve yapılandır
+
+```bash
+sudo apt-get install -y nginx
+```
+
+```bash
+sudo nano /etc/nginx/sites-available/inventra
+```
+
+Aşağıdaki konfigürasyonu **eksiksiz** yapıştırın (`your-domain.com` yerine kendi domain'inizi yazın):
+
+```nginx
+# WebSocket için map değişkeni.
+# Normal HTTP isteklerine Connection:close, WebSocket'e Connection:upgrade gönderir.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass         http://127.0.0.1:5000;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade           $http_upgrade;
+        proxy_set_header   Connection        $connection_upgrade;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+    }
+}
+```
+
+> ⚠️ **Önemli:** Bu konfigürasyonda yalnızca `listen 80` bloğu olmalıdır.  
+> `listen 443 ssl` bloğu **eklemeyin** — Cloudflare Flexible modunda 443'e bağlanmaz, eklenmesi yanlış server block eşlemesine (başka subdomain içeriği) ve sertifika hatalarına yol açar.
+
+```bash
+# Symlink oluştur (ilk kurulumsa)
+sudo ln -s /etc/nginx/sites-available/inventra /etc/nginx/sites-enabled/
+
+# Mevcut default site'ı devre dışı bırak (çakışmayı önler)
+sudo rm -f /etc/nginx/sites-enabled/default
+
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+---
+
+### 9.B Cloudflare Olmadan Kurulum (Direkt SSL)
+
+Cloudflare kullanmıyorsanız Certbot ile origin'de SSL sertifikası alın.
+
+#### 9.B.1 — Nginx ve Certbot kur
 
 ```bash
 sudo apt-get install -y nginx certbot python3-certbot-nginx
 ```
 
-### 9.2 Nginx site konfigürasyonu
+#### 9.B.2 — Nginx konfigürasyonu (port 80)
 
 ```bash
 sudo nano /etc/nginx/sites-available/inventra
 ```
 
 ```nginx
-# WebSocket için: normal HTTP'de Connection:close, WebSocket'te Connection:upgrade gönderir.
-# Tüm isteklere Connection:upgrade göndermek POST body okumayı bozar.
 map $http_upgrade $connection_upgrade {
     default upgrade;
     ''      close;
@@ -418,19 +488,56 @@ server {
 
 ```bash
 sudo ln -s /etc/nginx/sites-available/inventra /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
-### 9.3 SSL sertifikası al
+#### 9.B.3 — SSL sertifikası al (Certbot)
 
 ```bash
 sudo certbot --nginx -d your-domain.com
 ```
 
-Certbot Nginx konfigürasyonunu otomatik olarak günceller. Sertifikalar 90 günde bir otomatik yenilenir.
+Certbot port 443 bloğunu otomatik ekler ve HTTP→HTTPS yönlendirmesi kurar. Sertifikalar 90 günde bir otomatik yenilenir.
 
-> **Not:** Docker veya systemd ile çalışırken `host` değerini `0.0.0.0` olarak bırakın — Nginx zaten yalnızca localhost:5000'e proxylediği için dışarıya doğrudan port açılmaz.
+---
+
+### 9.C Mevcut Bozuk Kurumu Düzeltme
+
+`"güvenli değil" + başka subdomain içeriği` hatası alıyorsanız aşağıdaki adımları uygulayın:
+
+**1 — Cloudflare modunu Flexible'a alın:**
+```
+Cloudflare → SSL/TLS → Overview → Flexible
+```
+
+**2 — Nginx konfigürasyonunu kontrol edin ve port 443 bloğunu silin:**
+```bash
+sudo nano /etc/nginx/sites-available/inventra
+```
+`server { listen 443 ssl; ... }` bloğunu **tamamen silin**, sadece `listen 80` bloğu kalmalı.
+
+**3 — Nginx'i yeniden yükleyin:**
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+**4 — Docker image'ı güncelleyin:**
+```bash
+cd ~/inventra
+git pull origin main
+docker compose down
+docker compose up -d --build
+```
+
+**5 — Test edin:**
+```bash
+curl http://localhost:5000/health
+# Tarayıcıda: https://your-domain.com/admin/login
+```
+
+> **Not:** `jrwhims.fatihdikec.me` gibi başka bir subdomain'in Nginx config'inde `default_server` işareti varsa kaldırmanız önerilir:  
+> `listen 80 default_server;` → `listen 80;`
 
 ---
 
