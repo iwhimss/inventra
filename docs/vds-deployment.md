@@ -1,6 +1,8 @@
 # Inventra Server — VDS/VPS Kurulum Kılavuzu
 
-Bu kılavuz, `inventra_server`'ı bir VDS veya VPS sunucusuna (Ubuntu 22.04 LTS önerilir) adım adım kurmanızı sağlar.
+**v0.1.0** · Bu kılavuz, `inventra_server`'ı bir VDS veya VPS sunucusuna (Ubuntu 22.04 LTS önerilir) adım adım kurmanızı sağlar.
+
+> Geliştirme ortamında çalıştırmak için: [docs/development.md](development.md)
 
 ---
 
@@ -15,9 +17,10 @@ Bu kılavuz, `inventra_server`'ı bir VDS veya VPS sunucusuna (Ubuntu 22.04 LTS 
 7. [systemd ile Otomatik Başlatma](#7-systemd-ile-otomatik-başlatma)
 8. [İsteğe Bağlı: Docker ile Kurulum](#8-i̇steğe-bağlı-docker-ile-kurulum)
 9. [İsteğe Bağlı: Nginx + SSL (HTTPS)](#9-i̇steğe-bağlı-nginx--ssl-https)
-10. [Flutter Uygulamasını Bağla](#10-flutter-uygulamasını-bağla)
-11. [Güncelleme Prosedürü](#11-güncelleme-prosedürü)
-12. [Sorun Giderme](#12-sorun-giderme)
+10. [Admin Paneli (Web Dashboard)](#10-admin-paneli-web-dashboard)
+11. [Flutter Uygulamasını Bağla](#11-flutter-uygulamasını-bağla)
+12. [Güncelleme Prosedürü](#12-güncelleme-prosedürü)
+13. [Sorun Giderme](#13-sorun-giderme)
 
 ---
 
@@ -121,11 +124,23 @@ Kurulum tamamlandığında `data/config.json` oluşur:
   "host": "0.0.0.0",
   "api_key": "inv_xxxxxxxxxxxxxxxxxxxx",
   "created_at": "2026-06-05T...",
-  "api_version": "1"
+  "api_version": "1.0"
 }
 ```
 
 > `data/` klasörü `.gitignore`'da hariç tutulmuştur — config ve veritabanı git'e yüklenmez.
+
+### Kurulumu sıfırlama
+
+Kurulumu baştan yapmak veya test sonrası temizlemek için:
+
+```bash
+dart run bin/server.dart --reset
+```
+
+Onay sorusu sonrasında `data/config.json`, `data/inventra.db` ve tüm resimler/loglar silinir; ardından setup wizard otomatik çalışır.
+
+> ⚠️ Bu komut **tüm satış ve ürün verilerini kalıcı olarak siler.** Üretim ortamında dikkatli kullanın.
 
 ---
 
@@ -164,25 +179,36 @@ dart run bin/server.dart
 # Sadece localhost (test için)
 dart run bin/server.dart --local
 
-# Port geçersiz kılma
+# Port geçersiz kılma (config.json değişmez, tek seferlik)
 dart run bin/server.dart --port 8080
 
 # Host geçersiz kılma
 dart run bin/server.dart --host 0.0.0.0
+
+# Tüm seçenekler
+dart run bin/server.dart --help
 ```
 
 Sunucu başarıyla başladığında:
 
 ```
+  📂 Data dizini : /home/inventra/inventra/inventra_server/data
+  🏪 İşletme     : Örnek Market
+  🌐 Adres       : 0.0.0.0:5000
+
 Inventra Server çalışıyor → http://0.0.0.0:5000
+Çıkmak için Ctrl+C basın.
 ```
 
 ### Bağlantıyı test et
 
 Başka bir makineden:
 ```bash
+curl http://<VDS_IP>:5000/health
+# {"status":"ok","uptime_seconds":5}
+
 curl http://<VDS_IP>:5000/api/version
-# {"server_version":"0.0.1","api_version":"1","min_app_version":"0.0.1"}
+# {"server_version":"0.1.0","api_version":"1.0","min_app_version":"0.1.0"}
 ```
 
 ---
@@ -396,7 +422,44 @@ Certbot Nginx konfigürasyonunu otomatik olarak günceller. Sertifikalar 90 gün
 
 ---
 
-## 10. Flutter Uygulamasını Bağla
+## 10. Admin Paneli (Web Dashboard)
+
+Sunucu çalışırken tarayıcıdan erişin:
+
+```
+http://<VDS_IP>:5000/admin
+```
+
+Nginx + SSL kuruluysa:
+```
+https://your-domain.com/admin
+```
+
+Setup sırasında belirlediğiniz Staff ID ve şifre ile giriş yapın.
+
+### Panel Sayfaları
+
+| Sayfa | Açıklama |
+|-------|----------|
+| **Dashboard** | Uptime, günlük ciro, stok uyarıları, 7 günlük satış özeti |
+| **Ürünler** | Stok ve fiyat inline düzenleme, stok seviyesi renk kodlaması |
+| **Satışlar** | Bugün / hafta / ay / tümü filtreli satış geçmişi |
+| **Loglar** | Tipe göre filtrelenebilir aktivite logları |
+| **Cihazlar** | Eşleme isteklerini onayla / reddet |
+| **Kullanıcılar** | POS terminali kullanıcıları yönet |
+| **Ayarlar** | İşletme bilgileri, port/host yapılandırması, API key, sıfırlama |
+
+### Port/Host Değiştirme (Admin Panelinden)
+
+1. **Ayarlar** → **Sunucu Yapılandırması**
+2. Yeni port veya host seçeneğini girin
+3. **Yapılandırmayı Kaydet** → sunucuyu yeniden başlatın
+
+> Değişiklikler `data/config.json`'a yazılır. Geçerli olması için `systemctl restart inventra-server` gerekir.
+
+---
+
+## 11. Flutter Uygulamasını Bağla
 
 1. Inventra uygulamasını açın.
 2. **Sunucu Bağlantısı** ekranında şu formatları kullanabilirsiniz:
@@ -404,13 +467,13 @@ Certbot Nginx konfigürasyonunu otomatik olarak günceller. Sertifikalar 90 gün
    - Domain (HTTP): `your-domain.com`
    - Domain (HTTPS, Nginx varsa): `your-domain.com`
 3. **Bağlan** tuşuna basın — cihaz eşleme isteği sunucuya gönderilir.
-4. Sunucunun yönetici Windows uygulamasında **Ayarlar → Cihazlar** ekranına gidin.
-5. Bekleyen eşleme isteğini onaylayın.
+4. Tarayıcıda admin panelini açın: `http://<VDS_IP>:5000/admin` → **Cihazlar**
+5. Bekleyen eşleme isteğini **Onayla** tuşuyla onaylayın.
 6. Onay sonrası uygulama otomatik olarak giriş ekranına geçer.
 
 ---
 
-## 11. Güncelleme Prosedürü
+## 12. Güncelleme Prosedürü
 
 ```bash
 # inventra kullanıcısına geç
@@ -435,7 +498,7 @@ sudo systemctl status inventra-server
 
 ---
 
-## 12. Sorun Giderme
+## 13. Sorun Giderme
 
 ### Port erişilemiyor
 
@@ -479,4 +542,4 @@ sudo apt-get install -y libsqlite3-dev
 
 ---
 
-*Inventra POS — [github.com/iwhimss/inventra](https://github.com/iwhimss/inventra)*
+*Inventra POS v0.1.0 — [github.com/iwhimss/inventra](https://github.com/iwhimss/inventra)*
