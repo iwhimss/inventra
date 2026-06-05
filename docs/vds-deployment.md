@@ -375,30 +375,42 @@ docker compose up -d
 
 Sunucunuza bir domain bağladıysanız HTTPS üzerinden erişim sağlayabilirsiniz.
 
-### 8.1 Nginx ve Certbot kur
+> ⚠️ **Cloudflare kullanıyorsanız** SSL modunu **"Full"** olarak ayarlayın (Cloudflare Dashboard → SSL/TLS → Overview → Full).  
+> "Flexible" modda Cloudflare HTTP üzerinden bağlanır → Nginx'in HTTP→HTTPS yönlendirmesi POST body'yi sıfırlar → login çalışmaz.
+
+### 9.1 Nginx ve Certbot kur
 
 ```bash
 sudo apt-get install -y nginx certbot python3-certbot-nginx
 ```
 
-### 8.2 Nginx site konfigürasyonu
+### 9.2 Nginx site konfigürasyonu
 
 ```bash
 sudo nano /etc/nginx/sites-available/inventra
 ```
 
 ```nginx
+# WebSocket için: normal HTTP'de Connection:close, WebSocket'te Connection:upgrade gönderir.
+# Tüm isteklere Connection:upgrade göndermek POST body okumayı bozar.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
 server {
     listen 80;
     server_name your-domain.com;
 
     location / {
-        proxy_pass http://127.0.0.1:5000;
+        proxy_pass         http://127.0.0.1:5000;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header   Upgrade           $http_upgrade;
+        proxy_set_header   Connection        $connection_upgrade;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
         proxy_read_timeout 86400;
     }
 }
@@ -410,7 +422,7 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-### 8.3 SSL sertifikası al
+### 9.3 SSL sertifikası al
 
 ```bash
 sudo certbot --nginx -d your-domain.com
@@ -418,7 +430,7 @@ sudo certbot --nginx -d your-domain.com
 
 Certbot Nginx konfigürasyonunu otomatik olarak günceller. Sertifikalar 90 günde bir otomatik yenilenir.
 
-> **Not:** `inventra-server.service` dosyasında `host` değerini `0.0.0.0` yerine `127.0.0.1` olarak değiştirin — Nginx proxy üzerinden erişildiğinde dışarıya doğrudan port açmanıza gerek kalmaz.
+> **Not:** Docker veya systemd ile çalışırken `host` değerini `0.0.0.0` olarak bırakın — Nginx zaten yalnızca localhost:5000'e proxylediği için dışarıya doğrudan port açılmaz.
 
 ---
 
