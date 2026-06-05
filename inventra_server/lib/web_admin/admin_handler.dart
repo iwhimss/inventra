@@ -82,6 +82,13 @@ class AdminHandler {
     return Response(302, headers: headers);
   }
 
+  /// HTTP Location header'ı yalnızca ASCII kabul eder.
+  /// Bu yardımcı, Türkçe karakter içeren query parametrelerini
+  /// percent-encode ederek geçerli bir URL üretir.
+  String _buildUrl(String path, Map<String, String> query) {
+    return Uri.parse(path).replace(queryParameters: query).toString();
+  }
+
   Response _html(String body, {int code = 200, Map<String, String>? extraHeaders}) {
     final headers = <String, String>{'content-type': 'text/html; charset=utf-8'};
     if (extraHeaders != null) headers.addAll(extraHeaders);
@@ -118,20 +125,20 @@ class AdminHandler {
     final password = params['password'] ?? '';
 
     if (staffId.isEmpty || password.isEmpty) {
-      return _redirect('/admin/login?error=Boş+bırakılamaz');
+      return _redirect(_buildUrl('/admin/login', {'error': 'Boş bırakılamaz'}));
     }
 
     final hash = sha256.convert(utf8.encode(password)).toString();
     final users = _db.query('SELECT * FROM users WHERE staff_id = ? AND password_hash = ?', [staffId, hash]);
 
     if (users.isEmpty) {
-      return _redirect('/admin/login?error=Hatalı+bilgi');
+      return _redirect(_buildUrl('/admin/login', {'error': 'Hatalı bilgi'}));
     }
 
     final user = users.first;
     final role = user['role']?.toString() ?? '';
     if (role != 'owner' && role != 'manager') {
-      return _redirect('/admin/login?error=Yetkiniz+yok');
+      return _redirect(_buildUrl('/admin/login', {'error': 'Yetkiniz yok'}));
     }
 
     final sid = _generateSessionId();
@@ -381,7 +388,7 @@ class AdminHandler {
     final name = params['name'] ?? '';
     final role = params['role'] ?? 'staff';
 
-    if (staffId.isEmpty || password.isEmpty) return _redirect('/admin/users?msg=Eksik+bilgi');
+    if (staffId.isEmpty || password.isEmpty) return _redirect(_buildUrl('/admin/users', {'msg': 'Eksik bilgi'}));
 
     final hash = sha256.convert(utf8.encode(password)).toString();
     try {
@@ -393,9 +400,9 @@ class AdminHandler {
         'role': role,
         'permissions': role == 'owner' ? 'all' : '{}',
       });
-      return _redirect('/admin/users?msg=Kullanıcı+eklendi');
+      return _redirect(_buildUrl('/admin/users', {'msg': 'Kullanıcı eklendi'}));
     } catch (e) {
-      return _redirect('/admin/users?msg=Hata:+$e');
+      return _redirect(_buildUrl('/admin/users', {'msg': 'Hata: ${e.toString()}'}));
     }
   }
 
@@ -405,7 +412,7 @@ class AdminHandler {
     final params = Uri.splitQueryString(body);
     final id = params['id'] ?? '';
     if (id.isNotEmpty) _db.delete('users', where: 'id = ?', whereArgs: [id]);
-    return _redirect('/admin/users?msg=Kullanıcı+silindi');
+    return _redirect(_buildUrl('/admin/users', {'msg': 'Kullanıcı silindi'}));
   }
 
   // ─── Roles ────────────────────────────────────────────────
@@ -568,10 +575,10 @@ class AdminHandler {
 
     final port = int.tryParse(portStr);
     if (port == null || port < 1 || port > 65535) {
-      return _redirect('/admin/settings?msg=Geçersiz+port+numarası');
+      return _redirect(_buildUrl('/admin/settings', {'msg': 'Geçersiz port numarası'}));
     }
     if (host != '0.0.0.0' && host != '127.0.0.1') {
-      return _redirect('/admin/settings?msg=Geçersiz+host+değeri');
+      return _redirect(_buildUrl('/admin/settings', {'msg': 'Geçersiz host değeri'}));
     }
 
     _config['port'] = port;
@@ -586,7 +593,7 @@ class AdminHandler {
       print('⚙️  [Admin Panel] Yapılandırma güncellendi — Port: $port, Host: $host');
     }
 
-    return _redirect('/admin/settings?msg=Yapılandırma+kaydedildi.+Sunucuyu+yeniden+başlatın.');
+    return _redirect(_buildUrl('/admin/settings', {'msg': 'Yapılandırma kaydedildi. Sunucuyu yeniden başlatın.'}));
   }
 
   Future<Response> _resetServer(Request request) async {
@@ -596,7 +603,7 @@ class AdminHandler {
     final confirmText = params['confirm_text']?.trim() ?? '';
 
     if (confirmText != 'SİL') {
-      return _redirect('/admin/settings?msg=Onay+metni+hatalı.+Sıfırlama+iptal+edildi.');
+      return _redirect(_buildUrl('/admin/settings', {'msg': 'Onay metni hatalı. Sıfırlama iptal edildi.'}));
     }
 
     print('⚠️  [Admin Panel] Sunucu sıfırlama talebi alındı. Veriler siliniyor...');
@@ -645,7 +652,7 @@ class AdminHandler {
     }
 
     final products = _db.query(
-      'SELECT p.*, pg.name as group_name FROM products p LEFT JOIN product_groups pg ON p.group_id = pg.id $whereClause ORDER BY p.name LIMIT 500',
+      'SELECT * FROM products $whereClause ORDER BY name LIMIT 500',
       whereArgs,
     );
 
@@ -671,7 +678,7 @@ class AdminHandler {
           : stock <= 5
               ? 'color:var(--warning);font-weight:700'
               : 'color:#55efc4';
-      final price = (p['price'] as num?)?.toDouble() ?? 0.0;
+      final price = (p['sale_price'] as num?)?.toDouble() ?? 0.0;
       final id = _esc(p['id']);
       return '''
         <tr id="row-$id">
@@ -679,7 +686,7 @@ class AdminHandler {
             <div style="font-weight:600">${_esc(p['name'])}</div>
             ${p['barcode'] != null && p['barcode'].toString().isNotEmpty ? '<div style="font-size:12px;color:var(--muted);font-family:monospace">${_esc(p['barcode'])}</div>' : ''}
           </td>
-          <td>${_esc(p['group_name'] ?? '—')}</td>
+          <td>${_esc(p['product_group'] ?? '—')}</td>
           <td>
             <form method="POST" action="/admin/products/update" style="display:flex;gap:6px;align-items:center">
               <input type="hidden" name="id" value="$id">
@@ -732,22 +739,22 @@ class AdminHandler {
     final value = params['value'] ?? '';
 
     if (id.isEmpty || field.isEmpty || value.isEmpty) {
-      return _redirect('/admin/products?msg=Eksik+parametre');
+      return _redirect(_buildUrl('/admin/products', {'msg': 'Eksik parametre'}));
     }
 
     // Only allow safe fields
     if (field == 'stock') {
       final stock = int.tryParse(value);
-      if (stock == null || stock < 0) return _redirect('/admin/products?msg=Geçersiz+stok+değeri');
+      if (stock == null || stock < 0) return _redirect(_buildUrl('/admin/products', {'msg': 'Geçersiz stok değeri'}));
       _db.execute('UPDATE products SET stock = ?, updated_at = ? WHERE id = ?',
           [stock, DateTime.now().toIso8601String(), id]);
     } else if (field == 'price') {
       final price = double.tryParse(value);
-      if (price == null || price < 0) return _redirect('/admin/products?msg=Geçersiz+fiyat');
-      _db.execute('UPDATE products SET price = ?, updated_at = ? WHERE id = ?',
+      if (price == null || price < 0) return _redirect(_buildUrl('/admin/products', {'msg': 'Geçersiz fiyat'}));
+      _db.execute('UPDATE products SET sale_price = ?, updated_at = ? WHERE id = ?',
           [price, DateTime.now().toIso8601String(), id]);
     } else {
-      return _redirect('/admin/products?msg=İzin+verilmeyen+alan');
+      return _redirect(_buildUrl('/admin/products', {'msg': 'İzin verilmeyen alan'}));
     }
 
     return _redirect('/admin/products');
