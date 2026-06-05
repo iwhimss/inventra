@@ -10,6 +10,7 @@ import 'package:inventra_server/server_paths.dart';
 void main(List<String> arguments) async {
   final parser = ArgParser()
     ..addFlag('setup', negatable: false, help: 'İlk kurulum sihirbazını çalıştır')
+    ..addFlag('reset', negatable: false, help: 'Tüm verileri sil ve sıfırdan kurulum yap')
     ..addOption('port', abbr: 'p', help: 'Port numarasını geçersiz kıl')
     ..addOption('host', help: 'Bağlanılacak IP adresi (varsayılan: config\'den okunur)')
     ..addFlag('local', negatable: false, help: 'Sadece yerel erişim (127.0.0.1)')
@@ -36,14 +37,26 @@ void main(List<String> arguments) async {
     return;
   }
 
+  if (results['reset'] as bool) {
+    await _resetData(dataPath);
+    return;
+  }
+
   final configFile = File(p.join(dataPath, 'config.json'));
   if (!configFile.existsSync()) {
-    print('');
-    print('⚠  Kurulum bulunamadı. Sunucuyu ilk kez çalıştırıyorsanız kurulumu başlatın:');
-    print('');
-    print('   dart run bin/server.dart --setup');
-    print('');
-    exit(1);
+    // Docker/CI: ENV değişkenleri ile otomatik kurulum dene
+    final autoSetup = await SetupWizard.runFromEnv(dataPath: dataPath);
+    if (!autoSetup) {
+      print('');
+      print('⚠  Kurulum bulunamadı. Sunucuyu ilk kez çalıştırıyorsanız kurulumu başlatın:');
+      print('');
+      print('   dart run bin/server.dart --setup');
+      print('');
+      print('   Docker kullanıyorsanız INVENTRA_SETUP=true ile ENV değişkenlerini ayarlayın.');
+      print('   Bkz: docs/vds-deployment.md — Docker Kurulumu');
+      print('');
+      exit(1);
+    }
   }
 
   final config = jsonDecode(configFile.readAsStringSync()) as Map<String, dynamic>;
@@ -74,13 +87,63 @@ void _printHelp(ArgParser parser) {
   print('');
   print('Örnekler:');
   print('  dart run bin/server.dart --setup     # İlk kurulumu çalıştır');
+  print('  dart run bin/server.dart --reset     # TÜM VERİLERİ SİL, sıfırdan kur');
   print('  dart run bin/server.dart             # Sunucuyu başlat');
   print('  dart run bin/server.dart --local     # Sadece bu cihazdan erişilebilir');
   print('  dart run bin/server.dart --port 8080 # Farklı port ile başlat');
   print('');
 }
 
+Future<void> _resetData(String dataPath) async {
+  print('');
+  print('⚠  UYARI: Bu işlem TÜM verilerinizi kalıcı olarak siler!');
+  print('   Silinecekler: config.json, inventra.db, tüm resimler ve loglar');
+  print('');
+  stdout.write('Devam etmek istediğinizden emin misiniz? [e/H]: ');
+  final answer = stdin.readLineSync()?.trim().toLowerCase() ?? '';
+  if (answer != 'e') {
+    print('İptal edildi.');
+    return;
+  }
+
+  print('');
+  print('Veriler siliniyor...');
+
+  final configFile = File(p.join(dataPath, 'config.json'));
+  final dbFile = File(p.join(dataPath, 'inventra.db'));
+  final imagesDir = Directory(p.join(dataPath, 'images'));
+  final logsDir = Directory(p.join(dataPath, 'logs'));
+
+  if (configFile.existsSync()) {
+    configFile.deleteSync();
+    print('  ✓ config.json silindi');
+  }
+  if (dbFile.existsSync()) {
+    dbFile.deleteSync();
+    print('  ✓ inventra.db silindi');
+  }
+  if (imagesDir.existsSync()) {
+    imagesDir.deleteSync(recursive: true);
+    print('  ✓ images/ silindi');
+  }
+  if (logsDir.existsSync()) {
+    logsDir.deleteSync(recursive: true);
+    print('  ✓ logs/ silindi');
+  }
+
+  print('');
+  print('Tüm veriler silindi. Kurulum başlatılıyor...');
+  print('');
+
+  await SetupWizard.run(dataPath: dataPath);
+}
+
 Future<void> _startServer(String dataPath, Map<String, dynamic> config) async {
+  print('');
+  print('  📂 Data dizini : ${p.absolute(dataPath)}');
+  print('  🏪 İşletme     : ${config['name'] ?? '-'}');
+  print('  🌐 Adres       : ${config['host'] ?? '0.0.0.0'}:${config['port'] ?? 5000}');
+  print('');
   final dbHelper = ServerDatabaseHelper(dataPath);
   dbHelper.open();
   final server = CoreServer(dbHelper, config, dataPath);

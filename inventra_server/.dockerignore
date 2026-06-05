@@ -1,0 +1,7 @@
+.dart_tool/
+build/
+data/
+*.db
+*.log
+logs/
+.git/

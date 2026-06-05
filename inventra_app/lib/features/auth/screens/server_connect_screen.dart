@@ -138,7 +138,15 @@ class _ServerConnectScreenState extends ConsumerState<ServerConnectScreen> {
                   color: AppTheme.primaryAccent.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Icon(Icons.cloud_outlined, size: 40, color: AppTheme.primaryAccent),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.asset(
+                    'assets/icons/app_icon.png',
+                    width: 80, height: 80, fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) =>
+                        Icon(Icons.cloud_outlined, size: 40, color: AppTheme.primaryAccent),
+                  ),
+                ),
               ),
               const SizedBox(height: 24),
 

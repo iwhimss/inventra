@@ -1,0 +1,31 @@
+services:
+  inventra-server:
+    build: ./inventra_server
+    container_name: inventra-server
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      # Kalıcı veri depolama — container silinse/güncellenmiş olsa bile veriler korunur
+      - inventra_data:/app/data
+    environment:
+      - TZ=Europe/Istanbul
+      # ─── İlk Kurulum (Opsiyonel) ────────────────────────────────────────────
+      # config.json yoksa aşağıdaki değişkenler otomatik kurulum başlatır.
+      # Kurulum tamamlandıktan sonra bu satırları yorum satırına alın veya silin.
+      #
+      # - INVENTRA_BUSINESS_NAME=Mağazam
+      # - INVENTRA_ADMIN_ID=1000
+      # - INVENTRA_ADMIN_PASSWORD=güvenli_şifre_buraya
+      # - INVENTRA_PORT=5000
+      # - INVENTRA_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  inventra_data:
+    driver: local

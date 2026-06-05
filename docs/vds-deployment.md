@@ -13,10 +13,11 @@ Bu kılavuz, `inventra_server`'ı bir VDS veya VPS sunucusuna (Ubuntu 22.04 LTS 
 5. [Firewall Ayarları](#5-firewall-ayarları)
 6. [Sunucuyu Çalıştır](#6-sunucuyu-çalıştır)
 7. [systemd ile Otomatik Başlatma](#7-systemd-ile-otomatik-başlatma)
-8. [İsteğe Bağlı: Nginx + SSL (HTTPS)](#8-i̇steğe-bağlı-nginx--ssl-https)
-9. [Flutter Uygulamasını Bağla](#9-flutter-uygulamasını-bağla)
-10. [Güncelleme Prosedürü](#10-güncelleme-prosedürü)
-11. [Sorun Giderme](#11-sorun-giderme)
+8. [İsteğe Bağlı: Docker ile Kurulum](#8-i̇steğe-bağlı-docker-ile-kurulum)
+9. [İsteğe Bağlı: Nginx + SSL (HTTPS)](#9-i̇steğe-bağlı-nginx--ssl-https)
+10. [Flutter Uygulamasını Bağla](#10-flutter-uygulamasını-bağla)
+11. [Güncelleme Prosedürü](#11-güncelleme-prosedürü)
+12. [Sorun Giderme](#12-sorun-giderme)
 
 ---
 
@@ -247,7 +248,104 @@ sudo journalctl -u inventra-server -n 100
 
 ---
 
-## 8. İsteğe Bağlı: Nginx + SSL (HTTPS)
+## 8. İsteğe Bağlı: Docker ile Kurulum
+
+Docker tercih ediyorsanız Dart SDK ve manuel kurulum gerekmez. Veriler Docker volume'da saklanır; container silinse veya güncellenmiş olsa bile veriler korunur.
+
+### 8.1 Docker ve Docker Compose Kur
+
+```bash
+# Docker Engine
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+newgrp docker
+
+# Kurulumu doğrula
+docker --version
+docker compose version
+```
+
+### 8.2 Projeyi İndir
+
+```bash
+git clone https://github.com/iwhimss/inventra.git
+cd inventra
+```
+
+### 8.3 İlk Kurulum: ENV Değişkenleri
+
+`docker-compose.yml` dosyasını açın ve ilk kurulum için yorum satırlarını kaldırın:
+
+```yaml
+environment:
+  - TZ=Europe/Istanbul
+  - INVENTRA_BUSINESS_NAME=Mağazam
+  - INVENTRA_ADMIN_ID=1000
+  - INVENTRA_ADMIN_PASSWORD=güvenli_şifre_buraya
+  - INVENTRA_PORT=5000
+  - INVENTRA_HOST=0.0.0.0
+```
+
+### 8.4 Container'ı Başlat
+
+```bash
+# İmajı derle ve başlat
+docker compose up -d --build
+
+# Durumu kontrol et
+docker compose ps
+
+# Logları takip et
+docker compose logs -f inventra-server
+```
+
+İlk başlangıçta sunucu ENV değişkenlerinden kurulumu otomatik tamamlar:
+
+```
+🐳 Docker otomatik kurulum başlatılıyor...
+   İşletme: Mağazam
+   Admin ID: 1000
+   Port: 5000 / Host: 0.0.0.0
+✓ Otomatik kurulum tamamlandı
+✓ API Key: inv_xxxxxxxxxxxxxxxxxxxx
+```
+
+### 8.5 Kurulum Sonrası ENV Temizliği
+
+Kurulum tamamlandıktan sonra `docker-compose.yml`'den hassas bilgileri kaldırın:
+
+```bash
+# ENV satırlarını yorum satırına al
+nano docker-compose.yml
+# → INVENTRA_BUSINESS_NAME ve diğer satırları # ile başlatın
+
+# Container'ı ENV güncellemesiyle yeniden başlat
+docker compose up -d
+```
+
+### 8.6 Verilerin Yedeklenmesi
+
+```bash
+# Volume içeriğini yedekle
+docker run --rm \
+  -v inventra_inventra_data:/data \
+  -v $(pwd):/backup \
+  alpine tar czf /backup/inventra-backup-$(date +%Y%m%d).tar.gz /data
+```
+
+### 8.7 Güncelleme (Docker)
+
+```bash
+git pull origin main
+docker compose build --no-cache
+docker compose up -d
+```
+
+> **Not:** `docker-compose.yml` içindeki `ports: "5000:5000"` satırını değiştirerek farklı dış port kullanabilirsiniz. Örneğin `"80:5000"` ile HTTP varsayılan portuna yönlendirin.
+
+---
+
+## 9. İsteğe Bağlı: Nginx + SSL (HTTPS)
 
 Sunucunuza bir domain bağladıysanız HTTPS üzerinden erişim sağlayabilirsiniz.
 
@@ -298,7 +396,7 @@ Certbot Nginx konfigürasyonunu otomatik olarak günceller. Sertifikalar 90 gün
 
 ---
 
-## 9. Flutter Uygulamasını Bağla
+## 10. Flutter Uygulamasını Bağla
 
 1. Inventra uygulamasını açın.
 2. **Sunucu Bağlantısı** ekranında şu formatları kullanabilirsiniz:
@@ -312,7 +410,7 @@ Certbot Nginx konfigürasyonunu otomatik olarak günceller. Sertifikalar 90 gün
 
 ---
 
-## 10. Güncelleme Prosedürü
+## 11. Güncelleme Prosedürü
 
 ```bash
 # inventra kullanıcısına geç
@@ -337,7 +435,7 @@ sudo systemctl status inventra-server
 
 ---
 
-## 11. Sorun Giderme
+## 12. Sorun Giderme
 
 ### Port erişilemiyor
 

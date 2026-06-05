@@ -1,6 +1,6 @@
 # Inventra POS
 
-Küçük ve orta ölçekli işletmeler için offline-first satış noktası (POS) sistemi. Flutter tabanlı masaüstü/mobil uygulama ve Dart HTTP sunucusundan oluşur.
+**v0.1.0** · Küçük ve orta ölçekli işletmeler için offline-first satış noktası (POS) sistemi. Flutter tabanlı masaüstü/mobil uygulama ve Dart HTTP sunucusundan oluşur.
 
 ---
 
@@ -85,9 +85,30 @@ Inventra Server çalışıyor → http://0.0.0.0:5000
 dart run bin/server.dart --local        # Sadece bu cihaz (127.0.0.1)
 dart run bin/server.dart --port 8080    # Farklı port
 dart run bin/server.dart --host 0.0.0.0 # Tüm ağ arayüzleri
+dart run bin/server.dart --reset        # TÜM VERİLERİ SİL, sıfırdan kur
 ```
 
-Windows için `start.bat`, Linux için `start.sh` kısayol scriptleri mevcuttur.
+Windows için `start.bat` (menülü), Linux için `start.sh` kısayol scriptleri mevcuttur.
+
+#### Docker ile Başlatma
+
+```bash
+# docker-compose.yml içinde ENV değişkenlerini ayarlayın (ilk kurulum için)
+docker compose up -d --build
+
+# Logları izle
+docker compose logs -f inventra-server
+```
+
+#### Windows Servis Olarak Çalıştırma
+
+```powershell
+# Önce NSSM indirin: https://nssm.cc/download → scripts/nssm.exe
+cd inventra_server
+.\scripts\build.ps1           # Exe'ye derle
+.\scripts\install-service.ps1  # Windows servisi olarak kur
+.\scripts\view-logs.ps1       # Logları canlı izle
+```
 
 ### 2. Uygulamayı Çalıştır
 
@@ -121,6 +142,7 @@ Kılavuz şunları kapsar:
 - Setup wizard ve config.json yapısı
 - Firewall ayarları (UFW + cloud provider)
 - systemd servisi ile otomatik başlatma
+- **Docker ile kurulum** (Dockerfile + docker-compose + ENV otomatik kurulum)
 - Nginx reverse proxy + Let's Encrypt SSL
 - Güncelleme prosedürü
 
@@ -131,13 +153,22 @@ Kılavuz şunları kapsar:
 ```
 inventra/
 ├── inventra_server/          # Dart HTTP sunucu
-│   ├── bin/server.dart       # Giriş noktası (CLI)
+│   ├── bin/server.dart       # Giriş noktası (CLI: --setup, --reset, --port, ...)
 │   ├── lib/
-│   │   ├── core_server.dart  # HTTP router ve handler'lar
-│   │   ├── setup.dart        # İlk kurulum wizard'ı
+│   │   ├── core_server.dart  # HTTP router ve 50+ handler
+│   │   ├── setup.dart        # Kurulum wizard (interaktif + ENV/Docker)
 │   │   ├── database_helper.dart
 │   │   └── web_admin/        # Tarayıcı tabanlı admin paneli
-│   ├── start.bat             # Windows kısayol
+│   │       └── admin_handler.dart  # Dashboard, Ürünler, Satışlar, Loglar, Ayarlar
+│   ├── scripts/              # Windows servis yönetimi (NSSM)
+│   │   ├── build.ps1         # dart compile exe
+│   │   ├── install-service.ps1
+│   │   ├── uninstall-service.ps1
+│   │   ├── view-logs.ps1
+│   │   └── service-status.ps1
+│   ├── Dockerfile            # Multi-stage Docker image
+│   ├── .dockerignore
+│   ├── start.bat             # Windows menülü kısayol
 │   └── start.sh              # Linux kısayol
 │
 ├── inventra_app/             # Flutter uygulaması
@@ -146,11 +177,29 @@ inventra/
 │   │   └── features/         # Ekranlar (POS, stok, müşteri, ayarlar...)
 │   └── windows/              # Windows platform dosyaları
 │
+├── docker-compose.yml        # Docker Compose (kalıcı volume dahil)
 ├── docs/
-│   └── vds-deployment.md     # VDS kurulum kılavuzu
+│   ├── vds-deployment.md     # VDS + Docker kurulum kılavuzu
+│   └── project-overview.md   # Proje mimarisi detaylı özet
 ├── .plan/                    # Geliştirme planları (versiyon bazlı)
 └── README.md
 ```
+
+---
+
+## Web Admin Paneli
+
+Sunucu çalıştıktan sonra tarayıcıdan `http://<sunucu-ip>:5000/admin` adresine erişin.
+
+| Sayfa | Açıklama |
+|-------|----------|
+| **Dashboard** | Çalışma süresi, bugünkü ciro, stok uyarıları, 7 günlük satış özeti |
+| **Ürünler** | Stok ve fiyat inline düzenleme, stok seviyesine göre renk kodlaması, arama/filtreleme |
+| **Satışlar** | Satış geçmişi (bugün/hafta/ay/tümü), toplam ciro, ödeme türü |
+| **Loglar** | Aktivite logları (auth/ürün/satış/kasa/sistem tipine göre filtrelenebilir) |
+| **Cihazlar** | Eşleme isteklerini onaylama/reddetme, bağlı cihazlar |
+| **Kullanıcılar** | Kullanıcı ekleme/silme |
+| **Ayarlar** | İşletme bilgileri, port/host düzenleme, API key görüntüleme, sıfırlama |
 
 ---
 

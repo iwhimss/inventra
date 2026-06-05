@@ -29,7 +29,7 @@ class CoreServer {
   static const _loginLockoutDuration = Duration(minutes: 5);
 
   CoreServer(this._db, this._config, [this._instancePath = '.']) {
-    _adminHandler = AdminHandler(_db, _config);
+    _adminHandler = AdminHandler(_db, _config, _instancePath);
     _setupRoutes();
   }
 

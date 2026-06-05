@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as p;
 import '../database_helper.dart';
 
 /// Web-based admin panel handler.
@@ -12,8 +14,10 @@ class AdminHandler {
   final Map<String, dynamic> _config;
   final Map<String, _Session> _sessions = {};
   final _startTime = DateTime.now();
+  final String _instancePath;
 
-  AdminHandler(this._db, this._config);
+  AdminHandler(this._db, this._config, [String instancePath = '.'])
+      : _instancePath = instancePath;
 
   Router get router {
     final r = Router();
@@ -34,6 +38,13 @@ class AdminHandler {
     r.post('/admin/roles/delete', _deleteRole);
     r.get('/admin/settings', _settingsPage);
     r.post('/admin/settings', _saveSettings);
+    r.post('/admin/server-config', _saveServerConfig);
+    r.post('/admin/reset', _resetServer);
+    // New pages
+    r.get('/admin/products', _productsPage);
+    r.post('/admin/products/update', _updateProduct);
+    r.get('/admin/sales', _salesPage);
+    r.get('/admin/logs', _logsPage);
     return r;
   }
 
@@ -146,7 +157,7 @@ class AdminHandler {
     final uptime = DateTime.now().difference(_startTime);
     final uptimeStr = '${uptime.inDays}g ${uptime.inHours % 24}s ${uptime.inMinutes % 60}dk';
     final todayStr = DateTime.now().toIso8601String().substring(0, 10);
-    
+
     final totalProducts = _db.query('SELECT COUNT(*) as c FROM products').first['c'] ?? 0;
     final todaySalesResult = _db.query("SELECT COUNT(*) as c, COALESCE(SUM(total_amount),0) as t FROM sales WHERE created_at LIKE ?", ['$todayStr%']).first;
     final todaySalesCount = todaySalesResult['c'] ?? 0;
@@ -154,8 +165,32 @@ class AdminHandler {
     final pairedDevices = _db.query("SELECT COUNT(*) as c FROM paired_devices WHERE status = 'approved'").first['c'] ?? 0;
     final pendingDevices = _db.query("SELECT COUNT(*) as c FROM paired_devices WHERE status = 'pending'").first['c'] ?? 0;
     final totalUsers = _db.query('SELECT COUNT(*) as c FROM users').first['c'] ?? 0;
+    final outOfStock = (_db.query("SELECT COUNT(*) as c FROM products WHERE stock = 0").first['c'] as int?) ?? 0;
+    final lowStock = (_db.query("SELECT COUNT(*) as c FROM products WHERE stock > 0 AND stock <= 5").first['c'] as int?) ?? 0;
+
+    // Last 7 days sales
+    final weeklySales = <String>[];
+    final weeklyRows = StringBuffer();
+    for (int i = 6; i >= 0; i--) {
+      final day = DateTime.now().subtract(Duration(days: i));
+      final dayStr = day.toIso8601String().substring(0, 10);
+      final label = i == 0 ? 'Bugün' : i == 1 ? 'Dün' : '${day.day}/${day.month}';
+      final res = _db.query("SELECT COUNT(*) as c, COALESCE(SUM(total_amount),0) as t FROM sales WHERE created_at LIKE ?", ['$dayStr%']).first;
+      final cnt = res['c'] ?? 0;
+      final tot = (res['t'] as num?)?.toDouble() ?? 0.0;
+      weeklySales.add(dayStr);
+      weeklyRows.write('<tr><td>$label</td><td>$cnt satış</td><td style="text-align:right;font-weight:600">${tot.toStringAsFixed(2)} ₺</td></tr>');
+    }
+
+    final stockAlertHtml = outOfStock > 0 || lowStock > 0
+        ? '''<div class="alert" style="background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);color:var(--danger);margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <span>⚠️ ${outOfStock > 0 ? '<strong>$outOfStock ürün stoksuz</strong>' : ''}${outOfStock > 0 && lowStock > 0 ? ', ' : ''}${lowStock > 0 ? '$lowStock ürün kritik stok (≤5)' : ''}</span>
+            <a href="/admin/products?filter=low" style="color:var(--danger);font-size:13px;text-decoration:underline">Görüntüle →</a>
+           </div>'''
+        : '';
 
     return _html(_renderPage('Dashboard', '''
+      $stockAlertHtml
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-icon">⏱️</div>
@@ -170,7 +205,7 @@ class AdminHandler {
         <div class="stat-card">
           <div class="stat-icon">📦</div>
           <div class="stat-value">$totalProducts</div>
-          <div class="stat-label">Toplam Ürün</div>
+          <div class="stat-label">Toplam Ürün${outOfStock > 0 ? ' <span class="badge" style="background:var(--danger)">$outOfStock stoksuz</span>' : ''}</div>
         </div>
         <div class="stat-card">
           <div class="stat-icon">📱</div>
@@ -188,14 +223,23 @@ class AdminHandler {
           <div class="stat-label">API Key</div>
         </div>
       </div>
-      <div class="info-section">
-        <h3>Sunucu Bilgileri</h3>
-        <table class="info-table">
-          <tr><td>İşletme</td><td>${_config['name'] ?? '-'}</td></tr>
-          <tr><td>Port</td><td>${_config['port'] ?? 5000}</td></tr>
-          <tr><td>API Versiyon</td><td>${_config['api_version'] ?? '1.0'}</td></tr>
-          <tr><td>Başlatılma</td><td>${_startTime.toIso8601String().substring(0, 19)}</td></tr>
-        </table>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+        <div class="info-section">
+          <h3>Sunucu Bilgileri</h3>
+          <table class="info-table">
+            <tr><td>İşletme</td><td>${_config['name'] ?? '-'}</td></tr>
+            <tr><td>Port</td><td>${_config['port'] ?? 5000}</td></tr>
+            <tr><td>API Versiyon</td><td>${_config['api_version'] ?? '1.0'}</td></tr>
+            <tr><td>Başlatılma</td><td>${_startTime.toIso8601String().substring(0, 19)}</td></tr>
+          </table>
+        </div>
+        <div class="info-section">
+          <h3>Son 7 Günlük Satışlar</h3>
+          <table class="info-table" style="width:100%">
+            $weeklyRows
+          </table>
+        </div>
       </div>
     '''));
   }
@@ -433,6 +477,11 @@ class AdminHandler {
     final settingsMap = <String, String>{};
     for (var s in settings) settingsMap[s['key']?.toString() ?? ''] = s['value']?.toString() ?? '';
 
+    final currentPort = _config['port']?.toString() ?? '5000';
+    final currentHost = _config['host']?.toString() ?? '0.0.0.0';
+    final apiKey = _config['api_key']?.toString() ?? '';
+    final dataPath = p.absolute(p.join(_instancePath, 'data'));
+
     return _html(_renderPage('Ayarlar', '''
       ${msg.isNotEmpty ? '<div class="alert alert-success">${_esc(msg)}</div>' : ''}
       <form method="POST" action="/admin/settings">
@@ -456,6 +505,45 @@ class AdminHandler {
         </div>
         <button type="submit">💾 Ayarları Kaydet</button>
       </form>
+
+      <div class="form-section" style="margin-top:32px">
+        <h3>⚙️ Sunucu Yapılandırması</h3>
+        <p class="muted" style="margin-bottom:16px;font-size:13px">
+          Değişiklikler <code>config.json</code>'a kaydedilir. Geçerli olması için sunucuyu yeniden başlatın.
+        </p>
+        <form method="POST" action="/admin/server-config">
+          <label>Port</label>
+          <input type="number" name="port" value="${_esc(currentPort)}" min="1" max="65535" style="max-width:160px">
+          <label>Ağ Erişimi</label>
+          <select name="host" style="max-width:300px">
+            <option value="0.0.0.0"${currentHost == '0.0.0.0' ? ' selected' : ''}>0.0.0.0 — Tüm ağ (LAN/VDS)</option>
+            <option value="127.0.0.1"${currentHost == '127.0.0.1' ? ' selected' : ''}>127.0.0.1 — Sadece bu cihaz</option>
+          </select>
+          <button type="submit" style="background:#6c5ce7;margin-top:4px">🔧 Yapılandırmayı Kaydet</button>
+        </form>
+        <div style="margin-top:20px;padding:14px;background:rgba(108,92,231,0.07);border-radius:8px;border:1px solid rgba(108,92,231,0.2)">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Sunucu Bilgileri</div>
+          <table style="width:100%;font-size:13px">
+            <tr><td style="color:var(--muted);width:120px;padding:4px 0">API Key</td>
+                <td><input type="text" value="${_esc(apiKey)}" readonly onclick="this.select()" style="font-family:monospace;font-size:12px;margin:0;cursor:pointer;width:100%"></td></tr>
+            <tr><td style="color:var(--muted);padding:4px 0">Data Dizini</td>
+                <td style="font-family:monospace;font-size:12px;padding:4px 0">${_esc(dataPath)}</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="form-section" style="margin-top:16px;border-color:rgba(255,107,107,0.3)">
+        <h3 style="color:var(--danger)">⚠️ Tehlikeli Bölge</h3>
+        <p class="muted" style="margin-bottom:16px;font-size:13px">
+          Sunucuyu sıfırlamak <strong style="color:var(--danger)">tüm verileri kalıcı olarak siler</strong>:
+          ürünler, satışlar, kullanıcılar, cihazlar, loglar. Bu işlem geri alınamaz.
+        </p>
+        <form method="POST" action="/admin/reset" onsubmit="return confirm('TÜM VERİLER SİLİNECEK! Bu işlem geri alınamaz.\\n\\nDevam etmek istiyor musunuz?')">
+          <input type="text" name="confirm_text" placeholder="Onaylamak için: SİL yazın" required
+            pattern="SİL" title="Tam olarak SİL yazın" style="max-width:280px;border-color:rgba(255,107,107,0.4)">
+          <button type="submit" style="background:var(--danger)">🗑️ Sunucuyu Sıfırla</button>
+        </form>
+      </div>
     '''));
   }
 
@@ -469,6 +557,381 @@ class AdminHandler {
       }
     }
     return _redirect('/admin/settings?msg=Kaydedildi');
+  }
+
+  Future<Response> _saveServerConfig(Request request) async {
+    if (!_isAuthenticated(request)) return _redirect('/admin/login');
+    final body = await request.readAsString();
+    final params = Uri.splitQueryString(body);
+    final portStr = params['port'] ?? '';
+    final host = params['host'] ?? '';
+
+    final port = int.tryParse(portStr);
+    if (port == null || port < 1 || port > 65535) {
+      return _redirect('/admin/settings?msg=Geçersiz+port+numarası');
+    }
+    if (host != '0.0.0.0' && host != '127.0.0.1') {
+      return _redirect('/admin/settings?msg=Geçersiz+host+değeri');
+    }
+
+    _config['port'] = port;
+    _config['host'] = host;
+
+    final configFile = File(p.join(_instancePath, 'data', 'config.json'));
+    if (configFile.existsSync()) {
+      final existing = jsonDecode(configFile.readAsStringSync()) as Map<String, dynamic>;
+      existing['port'] = port;
+      existing['host'] = host;
+      configFile.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(existing));
+      print('⚙️  [Admin Panel] Yapılandırma güncellendi — Port: $port, Host: $host');
+    }
+
+    return _redirect('/admin/settings?msg=Yapılandırma+kaydedildi.+Sunucuyu+yeniden+başlatın.');
+  }
+
+  Future<Response> _resetServer(Request request) async {
+    if (!_isAuthenticated(request)) return _redirect('/admin/login');
+    final body = await request.readAsString();
+    final params = Uri.splitQueryString(body);
+    final confirmText = params['confirm_text']?.trim() ?? '';
+
+    if (confirmText != 'SİL') {
+      return _redirect('/admin/settings?msg=Onay+metni+hatalı.+Sıfırlama+iptal+edildi.');
+    }
+
+    print('⚠️  [Admin Panel] Sunucu sıfırlama talebi alındı. Veriler siliniyor...');
+
+    final dataPath = p.join(_instancePath, 'data');
+    final configFile = File(p.join(dataPath, 'config.json'));
+    final dbFile = File(p.join(dataPath, 'inventra.db'));
+    final imagesDir = Directory(p.join(dataPath, 'images'));
+    final logsDir = Directory(p.join(dataPath, 'logs'));
+
+    if (configFile.existsSync()) configFile.deleteSync();
+    if (dbFile.existsSync()) dbFile.deleteSync();
+    if (imagesDir.existsSync()) imagesDir.deleteSync(recursive: true);
+    if (logsDir.existsSync()) logsDir.deleteSync(recursive: true);
+
+    print('✓  Tüm veriler silindi. Sunucu kapatılıyor.');
+
+    return _html(_renderPage('Sıfırlama Tamamlandı', '''
+      <div class="alert alert-danger" style="font-size:16px">
+        ✓ Tüm veriler silindi. Sunucu kapatıldı.
+      </div>
+      <p class="muted">Yeniden kurulum için terminalde şu komutu çalıştırın:</p>
+      <pre style="background:var(--surface);padding:16px;border-radius:8px;border:1px solid var(--border);font-size:14px">dart run bin/server.dart --setup</pre>
+      <p class="muted" style="margin-top:12px">veya <code>start.bat</code> → Sıfırla ve Yeniden Kur seçeneği.</p>
+    ''', showNav: false), code: 200);
+  }
+
+  // ─── Products ─────────────────────────────────────────────
+
+  Response _productsPage(Request request) {
+    if (!_isAuthenticated(request)) return _redirect('/admin/login');
+
+    final filter = request.url.queryParameters['filter'] ?? '';
+    final search = request.url.queryParameters['q'] ?? '';
+    final msg = request.url.queryParameters['msg'] ?? '';
+
+    String whereClause = '';
+    final List<Object?> whereArgs = [];
+    if (filter == 'low') {
+      whereClause = 'WHERE stock <= 5';
+    } else if (filter == 'out') {
+      whereClause = 'WHERE stock = 0';
+    } else if (search.isNotEmpty) {
+      whereClause = 'WHERE name LIKE ? OR barcode LIKE ?';
+      whereArgs.addAll(['%$search%', '%$search%']);
+    }
+
+    final products = _db.query(
+      'SELECT p.*, pg.name as group_name FROM products p LEFT JOIN product_groups pg ON p.group_id = pg.id $whereClause ORDER BY p.name LIMIT 500',
+      whereArgs,
+    );
+
+    final filterBar = '''
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <form method="GET" action="/admin/products" style="display:flex;gap:8px;align-items:center;flex:1;min-width:200px">
+          <input type="text" name="q" placeholder="Ürün adı veya barkod ara..." value="${_esc(search)}"
+            style="margin:0;flex:1">
+          <button type="submit" style="white-space:nowrap">🔍 Ara</button>
+        </form>
+        <div style="display:flex;gap:4px">
+          <a href="/admin/products" class="btn" style="${filter.isEmpty && search.isEmpty ? '' : 'background:var(--surface);border:1px solid var(--border);color:var(--text);'}">Tümü</a>
+          <a href="/admin/products?filter=low" class="btn" style="background:rgba(254,202,87,0.15);color:var(--warning);border:1px solid rgba(254,202,87,0.3)">Kritik Stok</a>
+          <a href="/admin/products?filter=out" class="btn" style="background:rgba(255,107,107,0.15);color:var(--danger);border:1px solid rgba(255,107,107,0.3)">Stoksuz</a>
+        </div>
+      </div>
+    ''';
+
+    final tableRows = products.map((p) {
+      final stock = (p['stock'] as num?)?.toInt() ?? 0;
+      final stockColor = stock == 0
+          ? 'color:var(--danger);font-weight:700'
+          : stock <= 5
+              ? 'color:var(--warning);font-weight:700'
+              : 'color:#55efc4';
+      final price = (p['price'] as num?)?.toDouble() ?? 0.0;
+      final id = _esc(p['id']);
+      return '''
+        <tr id="row-$id">
+          <td>
+            <div style="font-weight:600">${_esc(p['name'])}</div>
+            ${p['barcode'] != null && p['barcode'].toString().isNotEmpty ? '<div style="font-size:12px;color:var(--muted);font-family:monospace">${_esc(p['barcode'])}</div>' : ''}
+          </td>
+          <td>${_esc(p['group_name'] ?? '—')}</td>
+          <td>
+            <form method="POST" action="/admin/products/update" style="display:flex;gap:6px;align-items:center">
+              <input type="hidden" name="id" value="$id">
+              <input type="hidden" name="field" value="price">
+              <input type="number" name="value" value="${price.toStringAsFixed(2)}" step="0.01" min="0"
+                style="width:90px;margin:0;font-size:13px;padding:6px 8px" onchange="this.form.submit()">
+              <span style="font-size:12px;color:var(--muted)">₺</span>
+            </form>
+          </td>
+          <td>
+            <form method="POST" action="/admin/products/update" style="display:flex;gap:6px;align-items:center">
+              <input type="hidden" name="id" value="$id">
+              <input type="hidden" name="field" value="stock">
+              <input type="number" name="value" value="$stock" min="0"
+                style="width:80px;margin:0;font-size:13px;padding:6px 8px;$stockColor" onchange="this.form.submit()">
+            </form>
+          </td>
+          <td style="$stockColor">$stock</td>
+        </tr>
+      ''';
+    }).join();
+
+    return _html(_renderPage('Ürünler', '''
+      ${msg.isNotEmpty ? '<div class="alert alert-success">${_esc(msg)}</div>' : ''}
+      $filterBar
+      <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${products.length} ürün listeleniyor</div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Ürün</th>
+            <th>Grup</th>
+            <th>Fiyat</th>
+            <th>Stok Düzenle</th>
+            <th>Stok</th>
+          </tr>
+        </thead>
+        <tbody>
+          $tableRows
+        </tbody>
+      </table>
+    '''));
+  }
+
+  Future<Response> _updateProduct(Request request) async {
+    if (!_isAuthenticated(request)) return _redirect('/admin/login');
+    final body = await request.readAsString();
+    final params = Uri.splitQueryString(body);
+    final id = params['id'] ?? '';
+    final field = params['field'] ?? '';
+    final value = params['value'] ?? '';
+
+    if (id.isEmpty || field.isEmpty || value.isEmpty) {
+      return _redirect('/admin/products?msg=Eksik+parametre');
+    }
+
+    // Only allow safe fields
+    if (field == 'stock') {
+      final stock = int.tryParse(value);
+      if (stock == null || stock < 0) return _redirect('/admin/products?msg=Geçersiz+stok+değeri');
+      _db.execute('UPDATE products SET stock = ?, updated_at = ? WHERE id = ?',
+          [stock, DateTime.now().toIso8601String(), id]);
+    } else if (field == 'price') {
+      final price = double.tryParse(value);
+      if (price == null || price < 0) return _redirect('/admin/products?msg=Geçersiz+fiyat');
+      _db.execute('UPDATE products SET price = ?, updated_at = ? WHERE id = ?',
+          [price, DateTime.now().toIso8601String(), id]);
+    } else {
+      return _redirect('/admin/products?msg=İzin+verilmeyen+alan');
+    }
+
+    return _redirect('/admin/products');
+  }
+
+  // ─── Sales ────────────────────────────────────────────────
+
+  Response _salesPage(Request request) {
+    if (!_isAuthenticated(request)) return _redirect('/admin/login');
+
+    final period = request.url.queryParameters['period'] ?? 'today';
+    final pageStr = request.url.queryParameters['page'] ?? '1';
+    final page = int.tryParse(pageStr) ?? 1;
+    const perPage = 25;
+    final offset = (page - 1) * perPage;
+
+    final now = DateTime.now();
+    String dateFilter;
+    String periodLabel;
+    switch (period) {
+      case 'week':
+        final weekAgo = now.subtract(const Duration(days: 7)).toIso8601String().substring(0, 10);
+        dateFilter = "AND created_at >= '$weekAgo'";
+        periodLabel = 'Son 7 Gün';
+        break;
+      case 'month':
+        final monthAgo = now.subtract(const Duration(days: 30)).toIso8601String().substring(0, 10);
+        dateFilter = "AND created_at >= '$monthAgo'";
+        periodLabel = 'Son 30 Gün';
+        break;
+      case 'all':
+        dateFilter = '';
+        periodLabel = 'Tüm Zamanlar';
+        break;
+      default: // today
+        final todayStr = now.toIso8601String().substring(0, 10);
+        dateFilter = "AND created_at LIKE '$todayStr%'";
+        periodLabel = 'Bugün';
+    }
+
+    final totalResult = _db.query("SELECT COUNT(*) as c, COALESCE(SUM(total_amount),0) as t FROM sales WHERE 1=1 $dateFilter").first;
+    final totalCount = (totalResult['c'] as int?) ?? 0;
+    final totalAmount = (totalResult['t'] as num?)?.toDouble() ?? 0.0;
+    final totalPages = (totalCount / perPage).ceil();
+
+    final sales = _db.query(
+      "SELECT s.*, u.name as cashier_name, (SELECT COUNT(*) FROM sale_items si WHERE si.sale_id = s.id) as item_count FROM sales s LEFT JOIN users u ON s.cashier_id = u.id WHERE 1=1 $dateFilter ORDER BY s.created_at DESC LIMIT $perPage OFFSET $offset",
+    );
+
+    final periodBtns = ['today', 'week', 'month', 'all'].map((p) {
+      final labels = {'today': 'Bugün', 'week': 'Son 7 Gün', 'month': 'Son 30 Gün', 'all': 'Tümü'};
+      final active = p == period;
+      return '<a href="/admin/sales?period=$p" class="btn" style="${active ? '' : 'background:var(--surface);border:1px solid var(--border);color:var(--text);'}">${labels[p]}</a>';
+    }).join();
+
+    final tableRows = sales.map((s) {
+      final total = (s['total_amount'] as num?)?.toDouble() ?? 0.0;
+      final payType = s['payment_type']?.toString() ?? '-';
+      final payIcon = payType == 'cash' ? '💵' : payType == 'card' ? '💳' : payType == 'credit' ? '📋' : '💱';
+      final dateStr = s['created_at']?.toString() ?? '';
+      final dateDisplay = dateStr.length >= 16 ? dateStr.substring(0, 16).replaceAll('T', ' ') : dateStr;
+      final saleId = s['id']?.toString() ?? '';
+      final shortId = saleId.length >= 8 ? saleId.substring(0, 8) : saleId;
+      return '''
+        <tr>
+          <td class="mono" style="font-size:12px;color:var(--muted)">$shortId…</td>
+          <td>$dateDisplay</td>
+          <td style="font-weight:700;color:#55efc4">${total.toStringAsFixed(2)} ₺</td>
+          <td>$payIcon ${_esc(payType)}</td>
+          <td>${_esc(s['cashier_name'] ?? '—')}</td>
+          <td style="text-align:center">${s['item_count'] ?? 0}</td>
+          ${s['discount_amount'] != null && (s['discount_amount'] as num) > 0 ? '<td style="color:var(--warning)">-${(s['discount_amount'] as num).toStringAsFixed(2)} ₺</td>' : '<td>—</td>'}
+        </tr>
+      ''';
+    }).join();
+
+    final pagination = totalPages > 1
+        ? '''<div style="display:flex;gap:8px;justify-content:center;margin-top:16px;flex-wrap:wrap">
+            ${page > 1 ? '<a href="/admin/sales?period=$period&page=${page - 1}" class="btn" style="background:var(--surface);border:1px solid var(--border);color:var(--text)">← Önceki</a>' : ''}
+            <span style="padding:10px 16px;color:var(--muted);font-size:14px">Sayfa $page / $totalPages</span>
+            ${page < totalPages ? '<a href="/admin/sales?period=$period&page=${page + 1}" class="btn" style="background:var(--surface);border:1px solid var(--border);color:var(--text)">Sonraki →</a>' : ''}
+           </div>'''
+        : '';
+
+    return _html(_renderPage('Satışlar', '''
+      <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+        <div style="display:flex;gap:6px">$periodBtns</div>
+        <div style="font-size:14px;color:var(--muted)">
+          <strong style="color:var(--text)">$totalCount</strong> satış —
+          <strong style="color:#55efc4">${totalAmount.toStringAsFixed(2)} ₺</strong> toplam
+          <span style="margin-left:8px;opacity:0.6">($periodLabel)</span>
+        </div>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr><th>ID</th><th>Tarih</th><th>Tutar</th><th>Ödeme</th><th>Kasiyer</th><th style="text-align:center">Ürün Adedi</th><th>İndirim</th></tr>
+        </thead>
+        <tbody>
+          ${sales.isEmpty ? '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px">Bu dönemde satış bulunamadı.</td></tr>' : tableRows}
+        </tbody>
+      </table>
+      $pagination
+    '''));
+  }
+
+  // ─── Logs ─────────────────────────────────────────────────
+
+  Response _logsPage(Request request) {
+    if (!_isAuthenticated(request)) return _redirect('/admin/login');
+
+    final typeFilter = request.url.queryParameters['type'] ?? '';
+    final pageStr = request.url.queryParameters['page'] ?? '1';
+    final page = int.tryParse(pageStr) ?? 1;
+    const perPage = 50;
+    final offset = (page - 1) * perPage;
+
+    final whereClause = typeFilter.isNotEmpty ? "WHERE action_type = '$typeFilter'" : '';
+
+    final totalResult = _db.query("SELECT COUNT(*) as c FROM activity_logs $whereClause").first;
+    final totalCount = (totalResult['c'] as int?) ?? 0;
+    final totalPages = (totalCount / perPage).ceil();
+
+    final logs = _db.query(
+      "SELECT al.*, u.name as user_name FROM activity_logs al LEFT JOIN users u ON al.user_id = u.id $whereClause ORDER BY al.created_at DESC LIMIT $perPage OFFSET $offset",
+    );
+
+    final typeIcons = <String, String>{
+      'auth': '🔐', 'product': '📦', 'sale': '💰', 'cash': '🏦',
+      'system': '⚙️', 'device': '📱', 'user': '👤', 'stock': '📊',
+    };
+
+    final typeBtns = ['', 'auth', 'product', 'sale', 'cash', 'system'].map((t) {
+      final labels = {'': 'Tümü', 'auth': 'Giriş/Çıkış', 'product': 'Ürün', 'sale': 'Satış', 'cash': 'Kasa', 'system': 'Sistem'};
+      final active = t == typeFilter;
+      final url = t.isEmpty ? '/admin/logs' : '/admin/logs?type=$t';
+      return '<a href="$url" class="btn" style="${active ? '' : 'background:var(--surface);border:1px solid var(--border);color:var(--text);font-size:13px;'}">${labels[t]}</a>';
+    }).join();
+
+    final tableRows = logs.map((l) {
+      final actionType = l['action_type']?.toString() ?? '';
+      final icon = typeIcons[actionType] ?? '📝';
+      final dateStr = l['created_at']?.toString() ?? '';
+      final dateDisplay = dateStr.length >= 19 ? dateStr.substring(0, 19).replaceAll('T', ' ') : dateStr;
+      final details = l['details']?.toString() ?? '';
+      String detailPreview = '';
+      if (details.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(details) as Map<String, dynamic>;
+          detailPreview = decoded.entries.take(3).map((e) => '${e.key}: ${e.value}').join(', ');
+        } catch (_) {
+          detailPreview = details.length > 80 ? '${details.substring(0, 80)}…' : details;
+        }
+      }
+      return '''
+        <tr>
+          <td style="font-size:12px;color:var(--muted)">$dateDisplay</td>
+          <td>$icon <span style="font-size:12px">${_esc(actionType)}</span></td>
+          <td>${_esc(l['action']?.toString() ?? '')}</td>
+          <td style="font-size:13px">${_esc(l['user_name'] ?? l['user_id'] ?? '—')}</td>
+          <td style="font-size:12px;color:var(--muted);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(detailPreview)}</td>
+        </tr>
+      ''';
+    }).join();
+
+    final pagination = totalPages > 1
+        ? '''<div style="display:flex;gap:8px;justify-content:center;margin-top:16px;flex-wrap:wrap">
+            ${page > 1 ? '<a href="/admin/logs?${typeFilter.isNotEmpty ? 'type=$typeFilter&' : ''}page=${page - 1}" class="btn" style="background:var(--surface);border:1px solid var(--border);color:var(--text)">← Önceki</a>' : ''}
+            <span style="padding:10px 16px;color:var(--muted);font-size:14px">Sayfa $page / $totalPages ($totalCount kayıt)</span>
+            ${page < totalPages ? '<a href="/admin/logs?${typeFilter.isNotEmpty ? 'type=$typeFilter&' : ''}page=${page + 1}" class="btn" style="background:var(--surface);border:1px solid var(--border);color:var(--text)">Sonraki →</a>' : ''}
+           </div>'''
+        : '<div style="text-align:center;color:var(--muted);font-size:13px;margin-top:12px">$totalCount kayıt</div>';
+
+    return _html(_renderPage('Aktivite Logları', '''
+      <div style="display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap">$typeBtns</div>
+      <table class="data-table">
+        <thead>
+          <tr><th>Tarih</th><th>Tip</th><th>İşlem</th><th>Kullanıcı</th><th>Detaylar</th></tr>
+        </thead>
+        <tbody>
+          ${logs.isEmpty ? '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px">Kayıt bulunamadı.</td></tr>' : tableRows}
+        </tbody>
+      </table>
+      $pagination
+    '''));
   }
 
   // ─── HTML helpers ─────────────────────────────────────────
@@ -487,6 +950,9 @@ class AdminHandler {
       <div class="nav-brand">🏪 Inventra Server</div>
       <div class="nav-links">
         <a href="/admin/dashboard">Dashboard</a>
+        <a href="/admin/products">Ürünler</a>
+        <a href="/admin/sales">Satışlar</a>
+        <a href="/admin/logs">Loglar</a>
         <a href="/admin/devices">Cihazlar</a>
         <a href="/admin/users">Kullanıcılar</a>
         <a href="/admin/roles">Roller</a>
