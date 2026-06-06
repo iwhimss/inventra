@@ -264,7 +264,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
     final isMobile = MediaQuery.of(context).size.width < 600;
 
     return Scaffold(
-      backgroundColor: AppTheme.darkBackground,
+      backgroundColor: AppTheme.darkBackground, // AppTheme.darkBackground tema'ya göre güncellenir
       body: SafeArea(
         child: _isLoading && _selectedFilePath == null
           ? const Center(child: CircularProgressIndicator())
@@ -459,7 +459,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
     return DropdownButtonFormField<int?>(
       initialValue: _fieldMapping[field],
       isExpanded: true,
-      dropdownColor: AppTheme.darkBackground,
+      dropdownColor: AppTheme.panelBackground,
       decoration: InputDecoration(
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -469,14 +469,17 @@ class _ConverterScreenState extends State<ConverterScreen> {
       ),
       hint: Text('Sütun Seç...', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
       items: [
-        const DropdownMenuItem<int?>(value: null, child: Text('Yok / Boş Bırak', style: TextStyle(fontSize: 12))),
+        DropdownMenuItem<int?>(
+          value: null,
+          child: Text('Yok / Boş Bırak', style: TextStyle(fontSize: 12, color: AppTheme.textMain)),
+        ),
         for (var i = 0; i < _headers.length; i++)
           DropdownMenuItem<int?>(
             value: i,
             child: Text(
               '${String.fromCharCode(65 + i)}: ${_headers[i]}',
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12),
+              style: TextStyle(fontSize: 12, color: AppTheme.textMain),
             ),
           ),
       ],

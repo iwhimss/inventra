@@ -11,6 +11,9 @@ import 'package:inventra_app/core/database/database_helper.dart';
 import 'package:inventra_app/core/services/sound_service.dart';
 import 'package:inventra_app/features/pos/providers/sync_provider.dart';
 import 'package:inventra_app/features/auth/providers/auth_provider.dart';
+import 'package:inventra_app/features/auth/screens/login_screen.dart';
+import 'package:inventra_app/features/auth/screens/server_connect_screen.dart';
+import 'package:inventra_app/core/services/cart_transfer_service.dart' show navigatorKey;
 
 class SyncSettingsTab extends ConsumerStatefulWidget {
   const SyncSettingsTab({super.key});
@@ -110,6 +113,7 @@ class _SyncSettingsTabState extends ConsumerState<SyncSettingsTab> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.panelBackground,
         title: const Text('Yeni Sunucu Ekle'),
         content: TextField(
           controller: ctrl,
@@ -118,6 +122,7 @@ class _SyncSettingsTabState extends ConsumerState<SyncSettingsTab> {
             hintText: 'Örn: 192.168.1.42',
             prefixIcon: Icon(Icons.computer, size: 18),
           ),
+          autofocus: true,
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('İptal')),
@@ -129,14 +134,47 @@ class _SyncSettingsTabState extends ConsumerState<SyncSettingsTab> {
       final ip = ctrl.text.trim();
       await _addSavedServer(ip);
       final pairResp = await ref.read(syncProvider.notifier).connectToServer(ip);
-      if (mounted) {
-        if (pairResp == 'pending') {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Eşleşme isteği gönderildi. Sunucu onayı bekleniyor.'), backgroundColor: AppTheme.warningAccent));
-        } else if (pairResp == 'approved') {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Sunucu başarıyla eklendi.'), backgroundColor: AppTheme.secondaryAccent));
+
+      if (!mounted) return;
+
+      if (pairResp == 'approved' || pairResp == 'pending') {
+        // Yeni sunucuya geçiş: server_ip güncelle, logout yap, ekrana yönlendir
+        final db = await DatabaseHelper.instance.globalDb;
+        await db.insert('settings', {'key': 'server_ip', 'value': ip},
+            conflictAlgorithm: ConflictAlgorithm.replace);
+        await DatabaseHelper.instance.switchToServer(ip);
+
+        await ref.read(authProvider.notifier).logout();
+
+        if (!mounted) return;
+
+        // Tüm route stack'i temizle ve uygun ekrana git
+        if (pairResp == 'approved') {
+          navigatorKey.currentState?.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+            (_) => false,
+          );
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Sunucu eklendi ancak bağlanılamadı.'), backgroundColor: AppTheme.dangerAccent));
+          // pending: bağlantı onayı için ServerConnectScreen
+          navigatorKey.currentState?.pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (_) => ServerConnectScreen(onConnected: () {
+                navigatorKey.currentState?.pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  (_) => false,
+                );
+              }),
+            ),
+            (_) => false,
+          );
         }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Sunucu eklendi ancak bağlanılamadı. Daha sonra geçiş yapabilirsiniz.'),
+            backgroundColor: AppTheme.dangerAccent,
+          ),
+        );
       }
     }
   }

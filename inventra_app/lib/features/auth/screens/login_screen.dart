@@ -8,6 +8,8 @@ import 'package:inventra_app/features/auth/providers/auth_provider.dart';
 import 'package:inventra_app/core/widgets/custom_title_bar.dart';
 import 'package:inventra_app/core/database/database_helper.dart';
 import 'package:inventra_app/core/services/sound_service.dart';
+import 'package:inventra_app/features/pos/providers/sync_provider.dart';
+import 'package:inventra_app/features/settings/screens/settings_screen.dart';
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -177,6 +179,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
               const SizedBox(height: 16),
               Text('Varsayılan giriş: ID 1000 - Şifre: 1234', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+              const SizedBox(height: 20),
+              // ── Sunucu Bilgisi ──────────────────────────────
+              _buildServerInfo(),
             ],
           ),
         ), // Container
@@ -186,5 +191,87 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   ], // Column children
 ), // Column body
 ); // Scaffold
+}
+
+Widget _buildServerInfo() {
+  final syncState = ref.watch(syncProvider);
+  final url = syncState.serverUrl;
+  final isOnline = syncState.isOnline;
+
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    decoration: BoxDecoration(
+      color: AppTheme.darkBackground,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: AppTheme.borderBright),
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: 8, height: 8,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: url == null
+                ? AppTheme.dangerAccent
+                : isOnline
+                    ? AppTheme.secondaryAccent
+                    : AppTheme.warningAccent,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                url ?? 'Sunucu bağlı değil',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textMain,
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                url == null
+                    ? 'Sunucu seçilmedi'
+                    : isOnline
+                        ? 'Çevrimiçi'
+                        : 'Sunucu erişilemiyor',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: url == null
+                      ? AppTheme.dangerAccent
+                      : isOnline
+                          ? AppTheme.secondaryAccent
+                          : AppTheme.warningAccent,
+                ),
+              ),
+            ],
+          ),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const SettingsScreen(initialIndex: 3),
+              ),
+            );
+          },
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: Text(
+            'Değiştir',
+            style: TextStyle(fontSize: 12, color: AppTheme.primaryAccent),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 }

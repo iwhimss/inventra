@@ -1290,6 +1290,91 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
     );
   }
 
+  /// Serbest fiyatlı "Muhtelif Ürün" ekleme dialog'u.
+  /// İsim varsayılan "Muhtelif Ürün" olarak gelir, kullanıcı değiştirebilir.
+  /// Her ekleme benzersiz ID ile ayrı satır oluşturur.
+  void _showMiscItemDialog(CartNotifier cartNotifier) {
+    final nameCtrl = TextEditingController(text: 'Muhtelif Ürün');
+    final priceCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.panelBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.add_shopping_cart, color: AppTheme.warningAccent, size: 22),
+            const SizedBox(width: 8),
+            const Text('Muhtelif Ürün Ekle'),
+          ],
+        ),
+        content: SizedBox(
+          width: context.dialogWidth(320),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                decoration: InputDecoration(
+                  labelText: 'Ürün Adı',
+                  isDense: true,
+                  prefixIcon: Icon(Icons.label_outline, color: AppTheme.textMuted, size: 18),
+                ),
+                textCapitalization: TextCapitalization.sentences,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: priceCtrl,
+                decoration: InputDecoration(
+                  labelText: 'Fiyat (₺)',
+                  isDense: true,
+                  prefixIcon: Icon(Icons.attach_money, color: AppTheme.warningAccent, size: 18),
+                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+                autofocus: true,
+                onSubmitted: (_) {
+                  final price = double.tryParse(priceCtrl.text.replaceAll(',', '.'));
+                  if (price != null && price > 0) {
+                    final name = nameCtrl.text.trim().isEmpty ? 'Muhtelif Ürün' : nameCtrl.text.trim();
+                    cartNotifier.addMiscItem(name, price);
+                    SoundService.playNotification();
+                    Navigator.pop(ctx);
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('İptal', style: TextStyle(color: AppTheme.textMuted)),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              final price = double.tryParse(priceCtrl.text.replaceAll(',', '.'));
+              if (price == null || price <= 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: const Text('Geçerli bir fiyat girin'), backgroundColor: AppTheme.dangerAccent),
+                );
+                return;
+              }
+              final name = nameCtrl.text.trim().isEmpty ? 'Muhtelif Ürün' : nameCtrl.text.trim();
+              cartNotifier.addMiscItem(name, price);
+              SoundService.playNotification();
+              Navigator.pop(ctx);
+            },
+            icon: const Icon(Icons.add_shopping_cart, size: 16),
+            label: const Text('SEPETE EKLE'),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.warningAccent, foregroundColor: Colors.white),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildProductSection(AsyncValue productsState, CartNotifier cartNotifier) {
     return Column(
       children: [
@@ -1339,6 +1424,28 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                 style: SegmentedButton.styleFrom(
                   selectedBackgroundColor: AppTheme.primaryAccent.withOpacity(0.15),
                   selectedForegroundColor: AppTheme.primaryAccent,
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Muhtelif Ürün Butonu
+              InkWell(
+                onTap: () => _showMiscItemDialog(cartNotifier),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.warningAccent.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.warningAccent.withOpacity(0.4)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.add_shopping_cart, color: AppTheme.warningAccent, size: 18),
+                      const SizedBox(width: 6),
+                      Text('Muhtelif', style: TextStyle(color: AppTheme.warningAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
                 ),
               ),
             ],

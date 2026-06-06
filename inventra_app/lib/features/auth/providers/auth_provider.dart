@@ -28,7 +28,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<bool> login(String staffId, String password) async {
     state = state.copyWith(isLoading: true, clearError: true);
-    
+
     try {
       // Tüm platformlar: önce API üzerinden giriş dene
       final response = await ApiClient.instance.post('/api/auth/login', {
@@ -40,22 +40,30 @@ class AuthNotifier extends StateNotifier<AuthState> {
         final user = User.fromMap(response.data!['user']);
         state = state.copyWith(currentUser: user, isLoading: false);
         ApiClient.instance.setUserName(user.name ?? user.staffId);
-        
-        // Kullanıcı bilgilerini cache'e kaydet (offline login için)
+
+        // Kullanıcı bilgilerini cache'e kaydet (offline login için).
+        // password_hash'i client-side SHA256 ile hesaplayıp override ediyoruz;
+        // böylece sunucu farklı format kullansa bile offline login çalışır.
         try {
+          final pwHash = sha256.convert(utf8.encode(password)).toString();
           final db = await DatabaseHelper.instance.database;
-          await db.insert('users', user.toMap(), 
+          final userMap = Map<String, dynamic>.from(user.toMap())
+            ..['password_hash'] = pwHash;
+          await db.insert('users', userMap,
             conflictAlgorithm: ConflictAlgorithm.replace);
         } catch (_) {}
-        
+
         return true;
       } else {
-        // API başarısız — offline cache'e bak
+        // API başarısız — sunucu erişilemez veya kimlik bilgisi hatalı
+        // Sunucu erişilemezse (herhangi bir bağlantı/timeout hatası) offline cache'e bak.
+        // Sunucu erişilebilir ama kimlik bilgisi hatalıysa (401) offline'a düşme.
         final isNetworkError = response.error != null && (
           response.error!.toLowerCase().contains('bağlantı') ||
           response.error!.toLowerCase().contains('http 5') ||
           response.error!.toLowerCase().contains('zaman aşımı') ||
-          response.error!.toLowerCase().contains('timeout')
+          response.error!.toLowerCase().contains('timeout') ||
+          response.error!.toLowerCase().contains('connection')
         );
 
         if (isNetworkError) {
@@ -66,7 +74,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         return false;
       }
     } catch (e) {
-      // Bağlantı hatası — offline cache'e bak
+      // Exception (SocketException, TimeoutException vb.) — offline cache'e bak
       return _tryOfflineLogin(staffId, password);
     }
   }

@@ -21,6 +21,7 @@ class _ServerConnectScreenState extends ConsumerState<ServerConnectScreen> {
   bool _connecting = false;
   String? _error;
   String? _status; // 'pending', 'approved', 'offline', 'error'
+  bool _isCancelled = false;
   @override
   void initState() {
     super.initState();
@@ -98,13 +99,21 @@ class _ServerConnectScreenState extends ConsumerState<ServerConnectScreen> {
   void _waitForApproval() {
     // Poll status from syncProvider — it's already polling
     Future.delayed(const Duration(seconds: 2), () {
-      if (!mounted) return;
+      if (!mounted || _isCancelled) return;
       final syncState = ref.read(syncProvider);
       if (syncState.pairStatus == 'approved') {
         widget.onConnected();
       } else if (syncState.pairStatus == 'pending') {
         _waitForApproval(); // Keep polling
       }
+    });
+  }
+
+  void _cancelPending() {
+    setState(() {
+      _isCancelled = true;
+      _status = null;
+      _error = null;
     });
   }
 
@@ -177,6 +186,17 @@ class _ServerConnectScreenState extends ConsumerState<ServerConnectScreen> {
                       Text('Windows uygulamasında bu cihazın eşleme isteğini onaylayın.',
                         style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
                         textAlign: TextAlign.center),
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        onPressed: _cancelPending,
+                        icon: const Icon(Icons.cancel_outlined, size: 16),
+                        label: const Text('İptal Et'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppTheme.warningAccent,
+                          side: BorderSide(color: AppTheme.warningAccent.withOpacity(0.5)),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        ),
+                      ),
                     ],
                   ),
                 ),

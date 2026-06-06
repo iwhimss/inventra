@@ -351,6 +351,7 @@ class DatabaseHelper {
       staff_id $textType UNIQUE,
       password_hash $textType,
       role $textType,
+      name $textNullable,
       permissions $textNullable
     )
     ''');

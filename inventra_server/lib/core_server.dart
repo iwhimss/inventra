@@ -154,6 +154,7 @@ class CoreServer {
 
     // ─── Authentication ─────────────────────────────────────
     _router.post('/api/auth/login', _handleAuthLogin);
+    _router.post('/api/auth/login-hash', _handleAuthLoginHash);
 
     // ─── Users CRUD ─────────────────────────────────────────
     _router.post('/api/users', _handleCreateUser);
@@ -554,6 +555,59 @@ class CoreServer {
           _loginAttempts[ip] = (prev.$1 + 1, prev.$2);
         }
         return _jsonError('Hatalı Personel ID veya Şifre', code: 401);
+      }
+    } catch (e) {
+      return _jsonError('Giriş hatası');
+    }
+  }
+
+  /// Hash ile direkt kimlik doğrulama — istemci "Beni Hatırla" auto-login için kullanır.
+  /// Plaintext şifre yerine SHA256 hash alır; sunucudaki hash ile karşılaştırır.
+  Future<Response> _handleAuthLoginHash(Request request) async {
+    final ip = request.context['shelf.io.connection_info'] != null
+        ? (request.context['shelf.io.connection_info'] as HttpConnectionInfo).remoteAddress.address
+        : 'unknown';
+
+    final now = DateTime.now();
+    final attempt = _loginAttempts[ip];
+    if (attempt != null) {
+      final (failCount, windowStart) = attempt;
+      if (failCount >= _maxLoginFailures && now.difference(windowStart) < _loginLockoutDuration) {
+        final remaining = _loginLockoutDuration - now.difference(windowStart);
+        return _jsonError('Çok fazla başarısız deneme. ${remaining.inMinutes + 1} dakika sonra tekrar deneyin.', code: 429);
+      }
+      if (now.difference(windowStart) >= _loginLockoutDuration) {
+        _loginAttempts.remove(ip);
+      }
+    }
+
+    try {
+      final body = await _readBody(request);
+      final staffId = body['staff_id'];
+      final passwordHash = body['password_hash'];
+
+      if (staffId == null || passwordHash == null) {
+        return _jsonError('Gerekli alanlar eksik');
+      }
+
+      final results = _db.query(
+        'SELECT * FROM users WHERE staff_id = ? AND password_hash = ?',
+        [staffId, passwordHash],
+      );
+
+      if (results.isNotEmpty) {
+        _loginAttempts.remove(ip);
+        final userName = results.first['name']?.toString() ?? staffId.toString();
+        _logActivity('Auth', 'user_login_hash', '$userName otomatik girişle sisteme girdi', userName: userName);
+        return _jsonOk({'success': true, 'user': results.first});
+      } else {
+        final prev = _loginAttempts[ip];
+        if (prev == null || now.difference(prev.$2) >= _loginLockoutDuration) {
+          _loginAttempts[ip] = (1, now);
+        } else {
+          _loginAttempts[ip] = (prev.$1 + 1, prev.$2);
+        }
+        return _jsonError('Geçersiz kimlik bilgisi', code: 401);
       }
     } catch (e) {
       return _jsonError('Giriş hatası');

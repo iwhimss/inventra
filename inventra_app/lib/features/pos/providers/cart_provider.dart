@@ -1,4 +1,5 @@
 ﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 import 'package:inventra_app/features/pos/models/pos_models.dart';
 
 class CartState {
@@ -62,6 +63,18 @@ class CartNotifier extends StateNotifier<CartState> {
 
   void setActiveTab(int index) {
     state = state.copyWith(activeTab: index, receivedAmount: 0, cartDiscountPercent: 0, cartDiscountAmount: 0);
+  }
+
+  /// Muhtelif (serbest fiyatlı) ürün ekler.
+  /// Her çağrıda benzersiz ID üretilir — aynı isme/fiyata sahip muhtelif ürünler
+  /// birbirine stacklenmez; her biri ayrı satır olarak görünür.
+  void addMiscItem(String name, double price) {
+    final id = 'misc_${const Uuid().v4()}';
+    var newCarts = List<List<CartItem>>.from(state.carts);
+    var cart = List<CartItem>.from(newCarts[state.activeTab]);
+    cart.add(CartItem(productId: id, productName: name, price: price));
+    newCarts[state.activeTab] = cart;
+    state = state.copyWith(carts: newCarts);
   }
 
   void addProduct(String productId, String name, double price) {
