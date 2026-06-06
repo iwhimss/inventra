@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import '../database_helper.dart';
+import 'icon_base64.dart';
 
 /// Web-based admin panel handler.
 /// Serves an HTML dashboard at /admin/* with session-based auth.
@@ -23,6 +25,7 @@ class AdminHandler {
     final r = Router();
     r.get('/admin', _redirectToDashboard);
     r.get('/admin/', _redirectToDashboard);
+    r.get('/admin/favicon.png', _serveFavicon);
     r.get('/admin/login', _loginPage);
     r.post('/admin/login', _loginAction);
     r.get('/admin/logout', _logoutAction);
@@ -951,10 +954,26 @@ class AdminHandler {
         .replaceAll('"', '&quot;');
   }
 
+  // Bellekte saklanmış favicon bytes (ilk istek ile decode edilir)
+  Uint8List? _faviconCache;
+
+  /// Uygulama ikonunu PNG olarak serve eder.
+  /// base64 sabiti derleme zamanında gömülüdür — dış dosyaya gerek yok.
+  Response _serveFavicon(Request request) {
+    _faviconCache ??= base64Decode(kAppIconBase64);
+    return Response.ok(
+      _faviconCache!,
+      headers: {
+        'content-type': 'image/png',
+        'cache-control': 'public, max-age=86400',
+      },
+    );
+  }
+
   String _renderPage(String title, String content, {bool showNav = true}) {
     final nav = showNav ? '''
     <nav>
-      <div class="nav-brand">🏪 Inventra Server</div>
+      <div class="nav-brand"><img src="/admin/favicon.png" width="28" height="28" style="border-radius:6px;vertical-align:middle;margin-right:8px;display:inline-block"> Inventra Server</div>
       <div class="nav-links">
         <a href="/admin/dashboard">Dashboard</a>
         <a href="/admin/products">Ürünler</a>
@@ -975,6 +994,7 @@ class AdminHandler {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>$title — Inventra Server</title>
+  <link rel="icon" type="image/png" href="/admin/favicon.png">
   <style>
     :root {
       --bg: #0f1117;

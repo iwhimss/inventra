@@ -1376,80 +1376,119 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
   }
 
   Widget _buildProductSection(AsyncValue productsState, CartNotifier cartNotifier) {
+    // Arama alanı widget'ı — her iki layout'ta ortaklaşa kullanılır
+    final searchField = TextField(
+      controller: _searchController,
+      decoration: InputDecoration(
+        hintText: 'Barkod Okutun veya Ürün Arayın...',
+        prefixIcon: Icon(Icons.search, color: AppTheme.textMuted),
+        suffixIcon: Platform.isWindows ? null : IconButton(
+          icon: Icon(Icons.qr_code_scanner, color: AppTheme.primaryAccent),
+          tooltip: 'Barkod Tara',
+          onPressed: () => _openBarcodeScanner(cartNotifier),
+        ),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      ),
+      onSubmitted: (val) {
+        final sCode = val.trim().replaceFirst(RegExp(r'^0+'), '');
+        if (sCode.isEmpty) return;
+        final products = ref.read(productProvider).valueOrNull ?? [];
+        final match = products.where((p) => p.barcode.replaceFirst(RegExp(r'^0+'), '') == sCode).toList();
+        if (match.isNotEmpty) {
+          _showPriceSelectionDialog(match.first, cartNotifier);
+          _searchController.clear();
+          setState(() {});
+        }
+      },
+      onChanged: (val) {
+        setState(() {});
+      },
+    );
+
+    final segmentedBtn = SegmentedButton<bool>(
+      segments: const [
+        ButtonSegment(value: true, label: Text('Hızlı', style: TextStyle(fontSize: 12))),
+        ButtonSegment(value: false, label: Text('Tümü', style: TextStyle(fontSize: 12))),
+      ],
+      selected: {_showQuickProducts},
+      onSelectionChanged: (val) => setState(() => _showQuickProducts = val.first),
+      style: SegmentedButton.styleFrom(
+        selectedBackgroundColor: AppTheme.primaryAccent.withOpacity(0.15),
+        selectedForegroundColor: AppTheme.primaryAccent,
+      ),
+    );
+
+    // Masaüstü: tam etiketli Muhtelif butonu
+    final miscBtnDesktop = InkWell(
+      onTap: () => _showMiscItemDialog(cartNotifier),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppTheme.warningAccent.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppTheme.warningAccent.withOpacity(0.4)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.add_shopping_cart, color: AppTheme.warningAccent, size: 18),
+            const SizedBox(width: 6),
+            Text('Muhtelif', style: TextStyle(color: AppTheme.warningAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+
+    // Mobil: sadece ikon, daha kompakt
+    final miscBtnMobile = Tooltip(
+      message: 'Muhtelif Ürün Ekle',
+      child: InkWell(
+        onTap: () => _showMiscItemDialog(cartNotifier),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: AppTheme.warningAccent.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppTheme.warningAccent.withOpacity(0.4)),
+          ),
+          child: Icon(Icons.add_shopping_cart, color: AppTheme.warningAccent, size: 20),
+        ),
+      ),
+    );
+
     return Column(
       children: [
         // Search + Quick Products Toggle
         Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Barkod Okutun veya Ürün Arayın...',
-                    prefixIcon: Icon(Icons.search, color: AppTheme.textMuted),
-                    suffixIcon: Platform.isWindows ? null : IconButton(
-                      icon: Icon(Icons.qr_code_scanner, color: AppTheme.primaryAccent),
-                      tooltip: 'Barkod Tara',
-                      onPressed: () => _openBarcodeScanner(cartNotifier),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: _isDesktop
+              // ── Masaüstü: tek satır ──────────────────────────────────
+              ? Row(
+                  children: [
+                    Expanded(child: searchField),
+                    const SizedBox(width: 8),
+                    segmentedBtn,
+                    const SizedBox(width: 8),
+                    miscBtnDesktop,
+                  ],
+                )
+              // ── Mobil: iki satır (sıkışıklık önlendi) ───────────────
+              : Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: searchField),
+                        const SizedBox(width: 8),
+                        miscBtnMobile,
+                      ],
                     ),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  ),
-                  onSubmitted: (val) {
-                    final sCode = val.trim().replaceFirst(RegExp(r'^0+'), '');
-                    if (sCode.isEmpty) return;
-                    final products = ref.read(productProvider).valueOrNull ?? [];
-                    final match = products.where((p) => p.barcode.replaceFirst(RegExp(r'^0+'), '') == sCode).toList();
-                    if (match.isNotEmpty) {
-                      _showPriceSelectionDialog(match.first, cartNotifier);
-                      _searchController.clear();
-                      setState(() {});
-                    }
-                  },
-                  onChanged: (val) {
-                    setState(() {});
-                  },
+                    const SizedBox(height: 8),
+                    SizedBox(width: double.infinity, child: segmentedBtn),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 8),
-              SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: true, label: Text('Hızlı', style: TextStyle(fontSize: 12))),
-                  ButtonSegment(value: false, label: Text('Tümü', style: TextStyle(fontSize: 12))),
-                ],
-                selected: {_showQuickProducts},
-                onSelectionChanged: (val) => setState(() => _showQuickProducts = val.first),
-                style: SegmentedButton.styleFrom(
-                  selectedBackgroundColor: AppTheme.primaryAccent.withOpacity(0.15),
-                  selectedForegroundColor: AppTheme.primaryAccent,
-                ),
-              ),
-              const SizedBox(width: 8),
-              // Muhtelif Ürün Butonu
-              InkWell(
-                onTap: () => _showMiscItemDialog(cartNotifier),
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: AppTheme.warningAccent.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppTheme.warningAccent.withOpacity(0.4)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.add_shopping_cart, color: AppTheme.warningAccent, size: 18),
-                      const SizedBox(width: 6),
-                      Text('Muhtelif', style: TextStyle(color: AppTheme.warningAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
         ),
         const SizedBox(height: 8),
         Expanded(

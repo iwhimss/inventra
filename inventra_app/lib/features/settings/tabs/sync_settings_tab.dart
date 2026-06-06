@@ -1,9 +1,8 @@
 ﻿import 'package:inventra_app/core/services/notification_service.dart';
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:sqflite/sqflite.dart';
 import 'package:inventra_app/core/theme/app_theme.dart';
 import 'package:inventra_app/core/network/api_client.dart';
@@ -85,25 +84,61 @@ class _SyncSettingsTabState extends ConsumerState<SyncSettingsTab> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.panelBackground,
         title: const Text('Sunucuyu Değiştir'),
-        content: Text('$url adresine geçiş yapılacak.\n\nFarklı sunucuların verilerinin çakışmaması için uygulama kapatılacaktır. Yeniden açtığınızda yeni sunucuya bağlanılacaktır. Onaylıyor musunuz?'),
+        content: Text('$url adresine geçiş yapılacak.\n\nMevcut oturum kapatılacak ve yeni sunucuya bağlanılacaktır. Onaylıyor musunuz?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryAccent),
-            child: const Text('DEĞİŞTİR VE ÇIK'),
+            child: const Text('DEĞİŞTİR'),
           ),
         ],
       ),
     );
-    if (confirm == true) {
-      final db = await DatabaseHelper.instance.database;
-      await db.insert('settings', {'key': 'server_ip', 'value': url}, conflictAlgorithm: ConflictAlgorithm.replace);
-      
-      if (Platform.isAndroid || Platform.isIOS) {
-        SystemNavigator.pop();
-      } else {
-        exit(0);
+    if (confirm != true) return;
+
+    // BUG FIX: globalDb kullanılmalı (database değil — cache DB'ye yazardı!)
+    final db = await DatabaseHelper.instance.globalDb;
+    await db.insert('settings', {'key': 'server_ip', 'value': url},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+
+    // In-app switch: uygulamayı kapatmak yerine oturumu kapat ve yönlendir
+    final result = await ref.read(syncProvider.notifier).connectToServer(url);
+    await ref.read(authProvider.notifier).logout();
+
+    if (!mounted) return;
+
+    if (result == 'approved') {
+      navigatorKey.currentState?.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+    } else if (result == 'pending') {
+      navigatorKey.currentState?.pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => ServerConnectScreen(onConnected: () {
+            navigatorKey.currentState?.pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+              (_) => false,
+            );
+          }),
+        ),
+        (_) => false,
+      );
+    } else {
+      // Bağlantı başarısız — eski sunucuya geri dön
+      if (oldUrl != null) {
+        await db.insert('settings', {'key': 'server_ip', 'value': oldUrl},
+            conflictAlgorithm: ConflictAlgorithm.replace);
+        await ref.read(syncProvider.notifier).connectToServer(oldUrl);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$url adresine bağlanılamadı. Önceki sunucuya geri dönüldü.'),
+            backgroundColor: AppTheme.dangerAccent,
+          ),
+        );
       }
     }
   }
@@ -130,52 +165,59 @@ class _SyncSettingsTabState extends ConsumerState<SyncSettingsTab> {
         ],
       ),
     );
-    if (confirm == true && ctrl.text.trim().isNotEmpty) {
-      final ip = ctrl.text.trim();
-      await _addSavedServer(ip);
-      final pairResp = await ref.read(syncProvider.notifier).connectToServer(ip);
+    if (confirm != true || ctrl.text.trim().isEmpty) return;
 
-      if (!mounted) return;
+    final ip = ctrl.text.trim();
+    await _addSavedServer(ip);
 
-      if (pairResp == 'approved' || pairResp == 'pending') {
-        // Yeni sunucuya geçiş: server_ip güncelle, logout yap, ekrana yönlendir
-        final db = await DatabaseHelper.instance.globalDb;
-        await db.insert('settings', {'key': 'server_ip', 'value': ip},
-            conflictAlgorithm: ConflictAlgorithm.replace);
-        await DatabaseHelper.instance.switchToServer(ip);
+    if (!mounted) return;
 
-        await ref.read(authProvider.notifier).logout();
+    // Sunucuya basit erişilebilirlik kontrolü — mevcut bağlantıyı BOZMADAN.
+    // Geçiş için kullanıcı listeden "Geçiş" butonuna basmalı.
+    final reachable = await _pingServer(ip);
 
-        if (!mounted) return;
+    if (!mounted) return;
 
-        // Tüm route stack'i temizle ve uygun ekrana git
-        if (pairResp == 'approved') {
-          navigatorKey.currentState?.pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const LoginScreen()),
-            (_) => false,
-          );
-        } else {
-          // pending: bağlantı onayı için ServerConnectScreen
-          navigatorKey.currentState?.pushAndRemoveUntil(
-            MaterialPageRoute(
-              builder: (_) => ServerConnectScreen(onConnected: () {
-                navigatorKey.currentState?.pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  (_) => false,
-                );
-              }),
-            ),
-            (_) => false,
-          );
-        }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Sunucu eklendi ancak bağlanılamadı. Daha sonra geçiş yapabilirsiniz.'),
-            backgroundColor: AppTheme.dangerAccent,
+    if (reachable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(child: Text('$ip eklendi. Geçiş için listedeki "Geçiş" butonunu kullanın.')),
+            ],
           ),
-        );
-      }
+          backgroundColor: AppTheme.secondaryAccent,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.warning_amber, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(child: Text('$ip eklendi ancak şu an erişilemiyor. Geçiş için "Geçiş" butonunu kullanın.')),
+            ],
+          ),
+          backgroundColor: AppTheme.warningAccent,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  /// Bir sunucunun erişilebilir olup olmadığını mevcut bağlantıyı bozmadan test eder.
+  Future<bool> _pingServer(String url) async {
+    try {
+      final normalized = url.startsWith('http') ? url : 'http://$url';
+      final resp = await http.get(Uri.parse('$normalized/health'))
+          .timeout(const Duration(seconds: 5));
+      return resp.statusCode == 200;
+    } catch (_) {
+      return false;
     }
   }
 

@@ -64,15 +64,42 @@ class SyncNotifier extends StateNotifier<SyncState> {
         final url = ipRows.first['value'] as String;
         await DatabaseHelper.instance.switchToServer(url);
         ApiClient.instance.configure(baseUrl: url);
-        
-        // Load saved pair status
-        final pairRows = await db.query('settings', where: "key = ?", whereArgs: ['pair_status']);
-        final savedPairStatus = pairRows.isNotEmpty ? pairRows.first['value'] as String? : null;
-        
-        // Load API key
-        final apiKeyRows = await db.query('settings', where: "key = ?", whereArgs: ['api_key']);
+
+        final sKey = _serverKey(url);
+
+        // FAZA 6: Sunucuya özgü pair_status anahtarını oku.
+        // Geriye dönük uyumluluk: yeni anahtar yoksa eski 'pair_status' anahtarına bak.
+        final pairRows = await db.query('settings', where: "key = ?", whereArgs: ['pair_status_$sKey']);
+        String? savedPairStatus;
+        if (pairRows.isNotEmpty) {
+          savedPairStatus = pairRows.first['value'] as String?;
+        } else {
+          // Migration: eski anahtarı oku ve yeni anahtara taşı
+          final legacyRows = await db.query('settings', where: "key = ?", whereArgs: ['pair_status']);
+          if (legacyRows.isNotEmpty) {
+            savedPairStatus = legacyRows.first['value'] as String?;
+            if (savedPairStatus != null) {
+              await db.insert('settings', {'key': 'pair_status_$sKey', 'value': savedPairStatus},
+                  conflictAlgorithm: ConflictAlgorithm.replace);
+              await db.delete('settings', where: "key = ?", whereArgs: ['pair_status']);
+            }
+          }
+        }
+
+        // FAZA 6: Sunucuya özgü api_key anahtarını oku.
+        final apiKeyRows = await db.query('settings', where: "key = ?", whereArgs: ['api_key_$sKey']);
         if (apiKeyRows.isNotEmpty && apiKeyRows.first['value'] != null) {
           ApiClient.instance.setApiKey(apiKeyRows.first['value'] as String);
+        } else {
+          // Migration: eski 'api_key' anahtarını taşı
+          final legacyApiRows = await db.query('settings', where: "key = ?", whereArgs: ['api_key']);
+          if (legacyApiRows.isNotEmpty && legacyApiRows.first['value'] != null) {
+            final legacyKey = legacyApiRows.first['value'] as String;
+            ApiClient.instance.setApiKey(legacyKey);
+            await db.insert('settings', {'key': 'api_key_$sKey', 'value': legacyKey},
+                conflictAlgorithm: ConflictAlgorithm.replace);
+            await db.delete('settings', where: "key = ?", whereArgs: ['api_key']);
+          }
         }
 
         state = state.copyWith(
@@ -111,25 +138,35 @@ class SyncNotifier extends StateNotifier<SyncState> {
       if (deviceId != null) {
         final pairResp = await ApiClient.instance.checkPairStatus(deviceId);
         final pairStatus = pairResp['status'] as String? ?? 'error';
-        
-        // If approved, save API key from response
+
+        // If approved, save API key with server-specific key
         if (pairStatus == 'approved' && pairResp['api_key'] != null) {
           final apiKey = pairResp['api_key'] as String;
           ApiClient.instance.setApiKey(apiKey);
           try {
-            final db = await DatabaseHelper.instance.globalDb;
-            await db.insert('settings', {'key': 'api_key', 'value': apiKey}, conflictAlgorithm: ConflictAlgorithm.replace);
+            final url = state.serverUrl;
+            if (url != null) {
+              final db = await DatabaseHelper.instance.globalDb;
+              final sKey = _serverKey(url);
+              await db.insert('settings', {'key': 'api_key_$sKey', 'value': apiKey},
+                  conflictAlgorithm: ConflictAlgorithm.replace);
+            }
           } catch (_) {}
         }
-        
+
         state = state.copyWith(
           isOnline: true,
           pairStatus: pairStatus,
         );
         if (pairStatus == 'approved') {
           try {
-            final db = await DatabaseHelper.instance.globalDb;
-            await db.insert('settings', {'key': 'pair_status', 'value': 'approved'}, conflictAlgorithm: ConflictAlgorithm.replace);
+            final url = state.serverUrl;
+            if (url != null) {
+              final db = await DatabaseHelper.instance.globalDb;
+              final sKey = _serverKey(url);
+              await db.insert('settings', {'key': 'pair_status_$sKey', 'value': 'approved'},
+                  conflictAlgorithm: ConflictAlgorithm.replace);
+            }
           } catch (_) {}
           _startHealthCheck();
           return true;
@@ -149,7 +186,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
     }
   }
 
-  /// Connect to a server: save URL, check health, request pairing
+  /// Sunucu URL'inden sunucuya özgü ayar anahtarı üretir.
+  /// Örn: "192.168.1.100:5000" → "192_168_1_100_5000"
+  String _serverKey(String url) =>
+      url.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+
+  /// Connect to a server: check existing pair status first, request pairing only if needed
   Future<String> connectToServer(String url) async {
     try {
       ApiClient.instance.configure(baseUrl: url);
@@ -175,6 +217,27 @@ class SyncNotifier extends StateNotifier<SyncState> {
       }
       ApiClient.instance.setDeviceId(deviceId);
 
+      // ── FAZA 5: Önce mevcut pair durumunu sorgula ──────────────
+      // Cihaz zaten onaylıysa gereksiz pairing request GÖNDERİLMEZ
+      final existingStatus = await ApiClient.instance.checkPairStatus(deviceId);
+      final existingPairStatus = existingStatus['status'] as String? ?? 'not_found';
+
+      if (existingPairStatus == 'approved') {
+        final apiKey = existingStatus['api_key'] as String?;
+        if (apiKey != null) {
+          ApiClient.instance.setApiKey(apiKey);
+          // FAZA 6: Sunucuya özgü anahtar ile kaydet
+          await db.insert('settings', {'key': 'api_key_${_serverKey(url)}', 'value': apiKey},
+              conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+        await db.insert('settings', {'key': 'pair_status_${_serverKey(url)}', 'value': 'approved'},
+            conflictAlgorithm: ConflictAlgorithm.replace);
+        state = state.copyWith(isOnline: true, pairStatus: 'approved', serverUrl: url);
+        _startHealthCheck();
+        return 'approved';
+      }
+      // ────────────────────────────────────────────────────────────
+
       // Determine device name/type based on platform
       String deviceName;
       String deviceType;
@@ -197,15 +260,18 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
       if (pairResp.success) {
         final status = pairResp.data?['status'] as String? ?? 'pending';
-        
-        // If approved, save API key
+
+        // If approved, save API key with server-specific key
         if (status == 'approved' && pairResp.data?['api_key'] != null) {
           final apiKey = pairResp.data!['api_key'] as String;
           ApiClient.instance.setApiKey(apiKey);
-          await db.insert('settings', {'key': 'api_key', 'value': apiKey}, conflictAlgorithm: ConflictAlgorithm.replace);
-          await db.insert('settings', {'key': 'pair_status', 'value': 'approved'}, conflictAlgorithm: ConflictAlgorithm.replace);
+          // FAZA 6: Sunucuya özgü anahtar
+          await db.insert('settings', {'key': 'api_key_${_serverKey(url)}', 'value': apiKey},
+              conflictAlgorithm: ConflictAlgorithm.replace);
+          await db.insert('settings', {'key': 'pair_status_${_serverKey(url)}', 'value': 'approved'},
+              conflictAlgorithm: ConflictAlgorithm.replace);
         }
-        
+
         state = state.copyWith(
           isOnline: true,
           pairStatus: status,
@@ -231,9 +297,17 @@ class SyncNotifier extends StateNotifier<SyncState> {
       _healthCheckTimer?.cancel();
       _healthCheckTimer = null;
       _healthCheckFailCount = 0;
+      final url = state.serverUrl;
       final db = await DatabaseHelper.instance.globalDb;
       await db.delete('settings', where: "key = ?", whereArgs: ['server_ip']);
       await db.delete('settings', where: "key = ?", whereArgs: ['device_id']);
+      // FAZA 6: Sunucuya özgü pair_status ve api_key sil
+      if (url != null) {
+        final sKey = _serverKey(url);
+        await db.delete('settings', where: "key = ?", whereArgs: ['pair_status_$sKey']);
+        await db.delete('settings', where: "key = ?", whereArgs: ['api_key_$sKey']);
+      }
+      // Geriye dönük uyumluluk: eski global anahtarları da temizle
       await db.delete('settings', where: "key = ?", whereArgs: ['pair_status']);
       await db.delete('settings', where: "key = ?", whereArgs: ['api_key']);
       ApiClient.instance.setApiKey(null);
@@ -248,14 +322,20 @@ class SyncNotifier extends StateNotifier<SyncState> {
       final status = result['status'] as String? ?? 'pending';
       if (status == 'approved') {
         timer.cancel();
-        // Save API key
+        // Save API key with server-specific key
         if (result['api_key'] != null) {
           final apiKey = result['api_key'] as String;
           ApiClient.instance.setApiKey(apiKey);
           try {
-            final db = await DatabaseHelper.instance.globalDb;
-            await db.insert('settings', {'key': 'api_key', 'value': apiKey}, conflictAlgorithm: ConflictAlgorithm.replace);
-            await db.insert('settings', {'key': 'pair_status', 'value': 'approved'}, conflictAlgorithm: ConflictAlgorithm.replace);
+            final url = state.serverUrl;
+            if (url != null) {
+              final db = await DatabaseHelper.instance.globalDb;
+              final sKey = _serverKey(url);
+              await db.insert('settings', {'key': 'api_key_$sKey', 'value': apiKey},
+                  conflictAlgorithm: ConflictAlgorithm.replace);
+              await db.insert('settings', {'key': 'pair_status_$sKey', 'value': 'approved'},
+                  conflictAlgorithm: ConflictAlgorithm.replace);
+            }
           } catch (_) {}
         }
         state = state.copyWith(pairStatus: 'approved', isOnline: true);
