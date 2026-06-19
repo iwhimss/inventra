@@ -871,7 +871,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                   ),
                 ),
                   Expanded(
-                    child: ListView.builder(
+                    child: RepaintBoundary(child: ListView.builder(
                       itemCount: filtered.length,
                       cacheExtent: 100,
                       addAutomaticKeepAlives: false,
@@ -1017,7 +1017,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                           ),
                         );
                       },
-                    ),
+                    )),
                   ),
                 ],
               );
@@ -1186,7 +1186,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                       ),
                     ),
                   Expanded(
-                    child: ListView.builder(
+                    child: RepaintBoundary(child: ListView.builder(
                       itemCount: filtered.length,
                       cacheExtent: 100,
                       addAutomaticKeepAlives: false,
@@ -1345,7 +1345,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                           ),
                           );
                       },
-                    ),
+                    )),
                   ),
                 ],
               );
@@ -1516,7 +1516,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                       ),
                     ),
                   Expanded(
-                    child: ListView.builder(
+                    child: RepaintBoundary(child: ListView.builder(
                       itemCount: filtered.length,
                       cacheExtent: 100,
                       addAutomaticKeepAlives: false,
@@ -1676,7 +1676,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                           ),
                           );
                       },
-                    ),
+                    )),
                   ),
                 ],
               );

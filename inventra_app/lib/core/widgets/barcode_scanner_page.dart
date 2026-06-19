@@ -74,7 +74,6 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
         children: [
           MobileScanner(
             controller: _controller,
-            scanWindow: scanWindow,
             errorBuilder: (context, error, child) => Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,

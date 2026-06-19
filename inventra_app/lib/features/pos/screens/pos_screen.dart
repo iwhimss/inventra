@@ -46,6 +46,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
 
   Product? _posSuggestion;
   Timer? _suggestionTimer;
+  Timer? _posSearchDebounce;
 
   @override
   void initState() {
@@ -85,6 +86,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
     _receivedAmountController.dispose();
     _mobileTabController?.dispose();
     _suggestionTimer?.cancel();
+    _posSearchDebounce?.cancel();
     super.dispose();
   }
 
@@ -1344,7 +1346,11 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
         }
       },
       onChanged: (val) {
-        setState(() {});
+        _posSearchDebounce?.cancel();
+        _posSearchDebounce = Timer(
+          const Duration(milliseconds: 150),
+          () { if (mounted) setState(() {}); },
+        );
       },
     );
 
@@ -1492,7 +1498,8 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                 );
               }
 
-              return ListView.builder(
+              return RepaintBoundary(
+                child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 itemCount: filtered.length,
                 itemBuilder: (context, index) {
@@ -1554,7 +1561,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                     ),
                   );
                 },
-              );
+              ));
             },
           ),
         ),
