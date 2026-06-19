@@ -9,6 +9,9 @@ class BarcodeScannerPage extends StatefulWidget {
   final void Function(String barcode) onDetected;
 
   const BarcodeScannerPage({required this.onDetected, super.key});
+
+  @override
+  State<BarcodeScannerPage> createState() => _BarcodeScannerPageState();
 }
 
 class _BarcodeScannerPageState extends State<BarcodeScannerPage>
