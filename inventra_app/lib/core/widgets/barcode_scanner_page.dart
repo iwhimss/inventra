@@ -59,7 +59,7 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
+    final size = MediaQuery.sizeOf(context);
 
     // Tarama penceresi: ekran ortasında %65 genişlik × %28 yükseklik
     final frameW = size.width * 0.65;
@@ -71,9 +71,11 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
+        fit: StackFit.expand,
         children: [
           MobileScanner(
             controller: _controller,
+            fit: BoxFit.cover,
             errorBuilder: (context, error, child) => Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,

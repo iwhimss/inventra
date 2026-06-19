@@ -521,7 +521,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
     final productsState = ref.watch(productProvider);
     final cartNotifier = ref.read(cartProvider.notifier);
     
-    final bool isDesktop = MediaQuery.of(context).size.width > 800;
+    final bool isDesktop = MediaQuery.sizeOf(context).width > 800;
 
     Widget cartSection = RepaintBoundary(child: _buildCartSection(cartState, cartNotifier));
     Widget productSection = _buildProductSection(productsState, cartNotifier);

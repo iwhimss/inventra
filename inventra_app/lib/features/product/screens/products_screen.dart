@@ -396,7 +396,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
 
     return Container(
       color: AppTheme.darkBackground,
-      padding: EdgeInsets.all(MediaQuery.of(context).size.width > 800 ? 24.0 : 12.0),
+      padding: EdgeInsets.all(MediaQuery.sizeOf(context).width > 800 ? 24.0 : 12.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
