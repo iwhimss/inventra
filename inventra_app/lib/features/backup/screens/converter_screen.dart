@@ -24,7 +24,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
   final List<String> _inventraFields = [
     'Barkod (Zorunlu)',
     'Ürün Adı (Zorunlu)',
-    'Stok',
+    'Mevcut Stok',
     'Alış Fiyatı (₺)',
     'Satış Fiyatı (₺) (Zorunlu)',
     'Satış Fiyatı 2 (₺)',
@@ -104,8 +104,9 @@ class _ConverterScreenState extends State<ConverterScreen> {
         }
 
         if (_headers.isEmpty) {
+          if (!mounted) return;
           setState(() { _isLoading = false; _selectedFilePath = null; });
-          if (mounted) NotificationService.showError('Excel dosyasında sütun başlıkları okunamadı. İlk satırın sütun başlıklarını içerdiğinden emin olun.');
+          NotificationService.showError('Excel dosyasında sütun başlıkları okunamadı. İlk satırın sütun başlıklarını içerdiğinden emin olun.');
           return;
         }
 
@@ -123,11 +124,13 @@ class _ConverterScreenState extends State<ConverterScreen> {
           }
         }
 
-        setState(() { _isLoading = false; });
+        if (mounted) setState(() { _isLoading = false; });
       }
     } catch (e) {
-      setState(() { _isLoading = false; _selectedFilePath = null; _headers = []; });
-      if (mounted) NotificationService.showError('Dosya okunamadı: $e');
+      if (mounted) {
+        setState(() { _isLoading = false; _selectedFilePath = null; _headers = []; });
+        NotificationService.showError('Dosya okunamadı: $e');
+      }
     }
   }
 
@@ -155,7 +158,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
        sheet.appendRow([
           TextCellValue('Barkod'),
           TextCellValue('Ürün İsmi'),
-          TextCellValue('Stok'),
+          TextCellValue('Mevcut Stok'),
           TextCellValue('Alış Fiyatı'),
           TextCellValue('Satış Fiyatı'),
           TextCellValue('Satış Fiyatı 2'),
@@ -184,7 +187,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
            sheet.appendRow([
              TextCellValue(getVal('Barkod (Zorunlu)')),
              TextCellValue(name),
-             TextCellValue(getVal('Stok')),
+             TextCellValue(getVal('Mevcut Stok')),
              TextCellValue(getVal('Alış Fiyatı (₺)')),
              TextCellValue(getVal('Satış Fiyatı (₺) (Zorunlu)')),
              TextCellValue(getVal('Satış Fiyatı 2 (₺)')),
@@ -255,7 +258,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
     } catch (e) {
        if (mounted) NotificationService.showError('Hata: $e');
     } finally {
-       setState(() => _isLoading = false);
+       if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -275,7 +278,10 @@ class _ConverterScreenState extends State<ConverterScreen> {
                 children: [
                   Text(
                     'Excel Sütun Eşleştirici',
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textMain,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(

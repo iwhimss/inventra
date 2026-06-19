@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:inventra_app/core/widgets/barcode_scanner_page.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:inventra_app/core/models/product.dart';
 import 'package:inventra_app/features/backup/services/excel_service.dart';
@@ -58,6 +58,9 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
   String _stockRemoveSearchQuery = '';
   bool _showProductButtons = true;
 
+  Product? _productSuggestion;
+  Timer? _productSuggestionTimer;
+
   @override
   void initState() {
     super.initState();
@@ -78,11 +81,30 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
         }
       }
     });
+    _searchController.addListener(_onProductSearchChanged);
+  }
+
+  void _onProductSearchChanged() {
+    _productSuggestionTimer?.cancel();
+    final query = _searchController.text
+        .replaceAll('I', 'ı')
+        .replaceAll('İ', 'i')
+        .toLowerCase();
+    if (query.length < 2) {
+      if (_productSuggestion != null) setState(() => _productSuggestion = null);
+      return;
+    }
+    _productSuggestionTimer = Timer(const Duration(milliseconds: 400), () async {
+      final products = ref.read(productProvider).value ?? [];
+      final result = await findClosestProductAsync(query, products);
+      if (mounted) setState(() => _productSuggestion = result);
+    });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.removeListener(_onProductSearchChanged);
     _searchController.dispose();
     _stockSearchCtrl.dispose();
     _stockRemoveSearchCtrl.dispose();
@@ -91,6 +113,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
     _searchDebounce?.cancel();
     _stockSearchDebounce?.cancel();
     _stockRemoveSearchDebounce?.cancel();
+    _productSuggestionTimer?.cancel();
     for (var c in _stockControllers.values) {
       c.dispose();
     }
@@ -101,96 +124,19 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
   }
 
   void _openProductBarcodeScanner() {
-    final MobileScannerController cameraController = MobileScannerController();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.black,
-      builder: (ctx) => SizedBox(
-        height: MediaQuery.of(context).size.height * 0.5,
-        child: Stack(
-          children: [
-            MobileScanner(
-              controller: cameraController,
-              errorBuilder: (context, error, child) {
-                return Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error, color: Colors.red, size: 48),
-                      const SizedBox(height: 16),
-                      Text('Kamera Hatası: ${error.errorCode.name}', style: const TextStyle(color: Colors.white)),
-                      const SizedBox(height: 8),
-                      Text(error.errorDetails?.message ?? '', style: const TextStyle(color: Colors.white70), textAlign: TextAlign.center),
-                      const SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        onPressed: () => cameraController.start(),
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Tekrar Dene'),
-                      ),
-                    ],
-                  ),
-                );
-              },
-              placeholderBuilder: (p0, p1) => Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const CircularProgressIndicator(color: AppTheme.secondaryAccent),
-                    const SizedBox(height: 16),
-                    const Text('Kamera başlatılıyor...', style: TextStyle(color: Colors.white70)),
-                  ],
-                ),
-              ),
-              onDetect: (capture) {
-                final barcodes = capture.barcodes;
-                if (barcodes.isEmpty) return;
-                final codeRaw = barcodes.first.rawValue;
-                if (codeRaw == null || codeRaw.isEmpty) return;
-                final code = codeRaw.replaceFirst(RegExp(r'^0+'), '');
-                Navigator.pop(ctx);
-                _searchController.text = code;
-                setState(() => _searchQuery = code.toLowerCase());
-                SoundService.playSuccess();
-              },
-            ),
-            Positioned(
-              top: 16, right: 16,
-              child: CircleAvatar(
-                backgroundColor: Colors.black54,
-                child: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Navigator.pop(ctx),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 16, right: 64,
-              child: CircleAvatar(
-                backgroundColor: Colors.black54,
-                child: IconButton(
-                  icon: const Icon(Icons.flip_camera_ios, color: Colors.white),
-                  onPressed: () => cameraController.switchCamera(),
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: 24, left: 0, right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
-                  child: const Text('Barkodu kameranın önüne tutun', style: TextStyle(color: Colors.white, fontSize: 14)),
-                ),
-              ),
-            ),
-          ],
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => BarcodeScannerPage(
+          onDetected: (codeRaw) {
+            final code = codeRaw.replaceFirst(RegExp(r'^0+'), '');
+            _searchController.text = code;
+            setState(() => _searchQuery = code.toLowerCase());
+            SoundService.playSuccess();
+          },
         ),
       ),
-    ).whenComplete(() {
-      cameraController.dispose();
-    });
+    );
   }
 
   void _showAddProductDialog() {
@@ -745,9 +691,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
               }
 
               if (filtered.isEmpty) {
-                final suggestions = query.isNotEmpty
-                    ? findClosestProducts(query, products)
-                    : <Product>[];
+                final suggestion = query.isNotEmpty ? _productSuggestion : null;
                 return Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -756,47 +700,14 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                         "Kayıtlı ürün bulunamadı.",
                         style: TextStyle(color: AppTheme.textMuted),
                       ),
-                      if (suggestions.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 24),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: AppTheme.panelBackground,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppTheme.primaryAccent.withOpacity(0.4)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.search, size: 16, color: AppTheme.primaryAccent),
-                                  const SizedBox(width: 6),
-                                  Text('Şunu mu demek istediniz?',
-                                      style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 6,
-                                children: suggestions.map((s) => ActionChip(
-                                  label: Text(s.name,
-                                      style: TextStyle(
-                                          color: AppTheme.primaryAccent, fontSize: 12)),
-                                  backgroundColor: AppTheme.darkBackground,
-                                  side: BorderSide(
-                                      color: AppTheme.primaryAccent.withOpacity(0.5)),
-                                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                                  onPressed: () => setState(() {
-                                    _searchQuery = s.name;
-                                    _searchController.text = s.name;
-                                  }),
-                                )).toList(),
-                              ),
-                            ],
-                          ),
+                      if (suggestion != null) ...[
+                        const SizedBox(height: 16),
+                        _ProductSuggestionCard(
+                          product: suggestion,
+                          onTap: () => setState(() {
+                            _searchQuery = suggestion.name;
+                            _searchController.text = suggestion.name;
+                          }),
                         ),
                       ],
                     ],
@@ -2409,5 +2320,61 @@ class _ProductFormDialogState extends ConsumerState<_ProductFormDialog> {
             SnackBar(content: Text('Görsel yüklenemedi: $e')));
       }
     }
+  }
+}
+
+/// Tek ürün önerisi kartı — "Bunu mu demek istediniz?" sistemi
+class _ProductSuggestionCard extends StatelessWidget {
+  final Product product;
+  final VoidCallback onTap;
+
+  const _ProductSuggestionCard({required this.product, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppTheme.panelBackground,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.primaryAccent.withOpacity(0.45)),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.search, size: 18, color: AppTheme.primaryAccent),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Bunu mu demek istediniz?',
+                      style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      product.name,
+                      style: TextStyle(
+                        color: AppTheme.primaryAccent,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios, size: 14, color: AppTheme.primaryAccent.withOpacity(0.6)),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

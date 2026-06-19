@@ -1,7 +1,7 @@
-﻿import 'package:inventra_app/core/models/product.dart';
+import 'package:flutter/foundation.dart';
+import 'package:inventra_app/core/models/product.dart';
 
 /// Sunucu URL'sini normalize eder: protokol ekler, trailing slash temizler.
-/// ApiClient ve SyncManager tarafından ortaklaşa kullanılır.
 String normalizeServerUrl(String url) {
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return url.endsWith('/') ? url.substring(0, url.length - 1) : url;
@@ -20,8 +20,12 @@ int levenshtein(String a, String b) {
   if (b.isEmpty) return a.length;
 
   final dp = List.generate(a.length + 1, (i) => List.filled(b.length + 1, 0));
-  for (int i = 0; i <= a.length; i++) { dp[i][0] = i; }
-  for (int j = 0; j <= b.length; j++) { dp[0][j] = j; }
+  for (int i = 0; i <= a.length; i++) {
+    dp[i][0] = i;
+  }
+  for (int j = 0; j <= b.length; j++) {
+    dp[0][j] = j;
+  }
 
   for (int i = 1; i <= a.length; i++) {
     for (int j = 1; j <= b.length; j++) {
@@ -36,70 +40,103 @@ int levenshtein(String a, String b) {
   return dp[a.length][b.length];
 }
 
-/// Normalizes a string for Turkish-aware case-insensitive comparison.
 String _normalize(String s) =>
     s.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
 
-/// Returns up to [limit] closest products for [query], sorted by match quality.
-///
-/// Two-layer matching:
-/// 1. Token-based (word-order-independent): all query words found in product name
-/// 2. Levenshtein fallback: word-level distance check with stricter threshold
-List<Product> findClosestProducts(
-  String query,
-  List<Product> products, {
-  int limit = 3,
-}) {
-  if (query.length < 2 || products.isEmpty) return [];
+/// Kelime-kelime fuzzy eşleştirme skoru.
+/// Her query kelimesini, ürün adının en yakın kelimesiyle karşılaştırır.
+/// "batn led" → "bant led" = 1 (batn↔bant dist=1, led↔led dist=0) → skor=1
+/// Döndürülen değer toplam minimum mesafedir; düşük = daha iyi eşleşme.
+int? _wordLevelScore(List<String> queryWords, List<String> productWords) {
+  int totalDist = 0;
 
-  final nQuery = _normalize(query);
-  final queryWords = nQuery.split(' ').where((w) => w.length >= 2).toList();
+  for (final qWord in queryWords) {
+    int minDist = qWord.length + 1; // worst case
+    for (final pWord in productWords) {
+      // Uzunluk farkı çok büyükse atla (hız için)
+      if ((pWord.length - qWord.length).abs() > qWord.length) continue;
+      final d = levenshtein(qWord, pWord);
+      if (d < minDist) minDist = d;
 
-  // Layer 1: token-based matching — order-independent word search
-  // "ceresit silikon" finds "Silikon Ceresit" because both words are present
-  if (queryWords.length > 1) {
-    final matches = <Product>[];
-    for (final p in products) {
-      final nName = _normalize(p.name);
-      if (queryWords.every((word) => nName.contains(word))) {
-        matches.add(p);
-        if (matches.length >= limit) break;
+      // Prefix kontrolü: "trifor" vs "trifonlu"
+      if (pWord.length > qWord.length) {
+        final prefix = pWord.substring(0, qWord.length);
+        final pd = levenshtein(qWord, prefix);
+        if (pd < minDist) minDist = pd;
       }
     }
-    if (matches.isNotEmpty) return matches;
+    // Her query kelimesi için izin verilen max hata: ceil(len/3)
+    final wordThreshold = (qWord.length / 3).ceil();
+    if (minDist > wordThreshold) return null; // Bu ürün eşleşmiyor
+    totalDist += minDist;
   }
 
-  // Layer 2: Levenshtein fallback — checks each word of product name individually.
-  // Stricter threshold (÷3 instead of ÷2) reduces false positives like
-  // "trafo" being suggested for "trifor" when a better match exists.
-  final threshold = (nQuery.length / 3).ceil();
-  final candidates = <({Product product, int dist})>[];
+  return totalDist;
+}
 
-  for (final p in products) {
+/// Arka planda çalıştırılabilen en iyi ürün eşleştirme işlevi.
+/// [_FindParams] üzerinden çalışır — compute() ile isolate'a gönderilir.
+Product? _findBestMatch(_FindParams params) {
+  final nQuery = _normalize(params.query);
+  if (nQuery.length < 2) return null;
+
+  final queryWords =
+      nQuery.split(' ').where((w) => w.length >= 2).toList();
+  if (queryWords.isEmpty) return null;
+
+  Product? best;
+  int bestScore = -1;
+
+  for (final p in params.products) {
     final nName = _normalize(p.name);
-    final nameWords = nName.split(' ').where((w) => w.length >= 2).toList();
 
-    int minDist = threshold + 1;
-    for (final word in nameWords) {
-      // Full word comparison
-      if ((word.length - nQuery.length).abs() <= threshold) {
-        final d = levenshtein(nQuery, word);
-        if (d < minDist) minDist = d;
-      }
-      // Prefix comparison: handles queries matching the start of longer words
-      // e.g. "trifor" vs "trifonlu" → check "trifor" vs "trifon" (dist=1)
-      if (word.length > nQuery.length) {
-        final prefix = word.substring(0, nQuery.length);
-        final d = levenshtein(nQuery, prefix);
-        if (d < minDist) minDist = d;
-      }
+    // Önce direkt içerik kontrolü — tam eşleşmeler hep kazanır
+    if (nName.contains(nQuery)) {
+      // Zaten normal arama bulmadıysa bile tam içerik varsa öner
+      return p;
     }
 
-    if (minDist <= threshold) {
-      candidates.add((product: p, dist: minDist));
+    final productWords =
+        nName.split(' ').where((w) => w.length >= 2).toList();
+    if (productWords.isEmpty) continue;
+
+    final score = _wordLevelScore(queryWords, productWords);
+    if (score == null) continue; // Eşleşme yok
+
+    // Tamamen doğru eşleşmeler (score=0) anında kabul
+    if (score == 0) return p;
+
+    // En iyi skoru izle
+    if (bestScore < 0 || score < bestScore) {
+      bestScore = score;
+      best = p;
     }
   }
 
-  candidates.sort((a, b) => a.dist.compareTo(b.dist));
-  return candidates.take(limit).map((c) => c.product).toList();
+  return best;
+}
+
+class _FindParams {
+  final String query;
+  final List<Product> products;
+  _FindParams(this.query, this.products);
+}
+
+/// Ana thread'de senkron olarak en iyi öneriyi döndürür.
+/// Sonuç yok → null döner.
+///
+/// Performans notu: büyük listelerde compute() ile isolate'ta çalıştırmak için
+/// [findClosestProductAsync] kullanın.
+Product? findClosestProduct(String query, List<Product> products) {
+  if (query.length < 2 || products.isEmpty) return null;
+  return _findBestMatch(_FindParams(query, products));
+}
+
+/// Flutter isolate'ta çalışan async versiyon — UI thread'i bloke etmez.
+Future<Product?> findClosestProductAsync(
+  String query,
+  List<Product> products,
+) async {
+  if (query.length < 2 || products.isEmpty) return null;
+  return compute(_findBestMatch, _FindParams(query, products));
 }

@@ -1,0 +1,275 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:inventra_app/core/theme/app_theme.dart';
+
+/// Tam ekran barkod tarayıcı sayfası.
+/// Ortada tarama çerçevesi, animasyonlu scan çizgisi ve 1.5s debounce içerir.
+class BarcodeScannerPage extends StatefulWidget {
+  final void Function(String barcode) onDetected;
+
+  const BarcodeScannerPage({required this.onDetected, super.key});
+}
+
+class _BarcodeScannerPageState extends State<BarcodeScannerPage>
+    with TickerProviderStateMixin {
+  final MobileScannerController _controller = MobileScannerController();
+  late final AnimationController _scanLineController;
+  late final Animation<double> _scanLineAnim;
+  DateTime? _lastScanTime;
+
+  @override
+  void initState() {
+    super.initState();
+    _scanLineController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat(reverse: true);
+    _scanLineAnim = CurvedAnimation(
+      parent: _scanLineController,
+      curve: Curves.easeInOut,
+    );
+  }
+
+  @override
+  void dispose() {
+    _scanLineController.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (capture.barcodes.isEmpty) return;
+    final code = capture.barcodes.first.rawValue;
+    if (code == null || code.isEmpty) return;
+
+    final now = DateTime.now();
+    if (_lastScanTime != null &&
+        now.difference(_lastScanTime!).inMilliseconds < 1500) {
+      return;
+    }
+    _lastScanTime = now;
+
+    Navigator.of(context).pop();
+    widget.onDetected(code);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+
+    // Tarama penceresi: ekran ortasında %65 genişlik × %28 yükseklik
+    final frameW = size.width * 0.65;
+    final frameH = size.height * 0.28;
+    final frameLeft = (size.width - frameW) / 2;
+    final frameTop = (size.height - frameH) / 2 - 20;
+    final scanWindow = Rect.fromLTWH(frameLeft, frameTop, frameW, frameH);
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          MobileScanner(
+            controller: _controller,
+            scanWindow: scanWindow,
+            errorBuilder: (context, error, child) => Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error, color: Colors.red, size: 48),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Kamera Hatası: ${error.errorCode.name}',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    error.errorDetails?.message ?? '',
+                    style: const TextStyle(color: Colors.white70),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () => _controller.start(),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Tekrar Dene'),
+                  ),
+                ],
+              ),
+            ),
+            placeholderBuilder: (p0, p1) => const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: AppTheme.secondaryAccent),
+                  SizedBox(height: 16),
+                  Text(
+                    'Kamera başlatılıyor...',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+            onDetect: _onDetect,
+          ),
+
+          // Koyu maske — tarama çerçevesinin dışı
+          _ScanOverlay(scanWindow: scanWindow),
+
+          // Animasyonlu scan çizgisi
+          AnimatedBuilder(
+            animation: _scanLineAnim,
+            builder: (context, child) {
+              final lineY =
+                  scanWindow.top + scanWindow.height * _scanLineAnim.value;
+              return Positioned(
+                left: scanWindow.left + 8,
+                top: lineY,
+                child: Container(
+                  width: scanWindow.width - 16,
+                  height: 2,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.transparent,
+                        AppTheme.primaryAccent.withOpacity(0.9),
+                        Colors.transparent,
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(1),
+                  ),
+                ),
+              );
+            },
+          ),
+
+          // Üst bar: kapat + kamera çevir
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  CircleAvatar(
+                    backgroundColor: Colors.black54,
+                    child: IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ),
+                  CircleAvatar(
+                    backgroundColor: Colors.black54,
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.flip_camera_ios,
+                        color: Colors.white,
+                      ),
+                      onPressed: () => _controller.switchCamera(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Alt açıklama metni
+          Positioned(
+            bottom: 48,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Barkodu çerçeve içine yerleştirin',
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tarama çerçevesi dışını karartır, köşelere L-şekli işaret çizer.
+class _ScanOverlay extends StatelessWidget {
+  final Rect scanWindow;
+
+  const _ScanOverlay({required this.scanWindow});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(painter: _OverlayPainter(scanWindow: scanWindow));
+  }
+}
+
+class _OverlayPainter extends CustomPainter {
+  final Rect scanWindow;
+
+  _OverlayPainter({required this.scanWindow});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final maskPaint = Paint()..color = Colors.black.withOpacity(0.62);
+
+    // Çerçeve dışını karart (4 dikdörtgen)
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, scanWindow.top),
+      maskPaint,
+    );
+    canvas.drawRect(
+      Rect.fromLTWH(
+        0,
+        scanWindow.bottom,
+        size.width,
+        size.height - scanWindow.bottom,
+      ),
+      maskPaint,
+    );
+    canvas.drawRect(
+      Rect.fromLTWH(0, scanWindow.top, scanWindow.left, scanWindow.height),
+      maskPaint,
+    );
+    canvas.drawRect(
+      Rect.fromLTWH(
+        scanWindow.right,
+        scanWindow.top,
+        size.width - scanWindow.right,
+        scanWindow.height,
+      ),
+      maskPaint,
+    );
+
+    // Köşe L işaretleri
+    const cornerLen = 22.0;
+    const cornerW = 3.5;
+    final cornerPaint = Paint()
+      ..color = AppTheme.primaryAccent
+      ..strokeWidth = cornerW
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    void drawCorner(Offset origin, double dx, double dy) {
+      canvas.drawLine(origin, origin + Offset(dx, 0), cornerPaint);
+      canvas.drawLine(origin, origin + Offset(0, dy), cornerPaint);
+    }
+
+    drawCorner(scanWindow.topLeft, cornerLen, cornerLen);
+    drawCorner(scanWindow.topRight, -cornerLen, cornerLen);
+    drawCorner(scanWindow.bottomLeft, cornerLen, -cornerLen);
+    drawCorner(scanWindow.bottomRight, -cornerLen, -cornerLen);
+  }
+
+  @override
+  bool shouldRepaint(covariant _OverlayPainter oldDelegate) =>
+      oldDelegate.scanWindow != scanWindow;
+}

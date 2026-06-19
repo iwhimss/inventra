@@ -19,7 +19,7 @@ import 'package:inventra_app/core/network/api_client.dart';
 import 'package:inventra_app/core/network/websocket_service.dart';
 import 'package:inventra_app/core/widgets/stock_warning_icon.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:inventra_app/core/widgets/barcode_scanner_page.dart';
 import 'package:inventra_app/core/models/customer.dart';
 import 'package:inventra_app/core/models/client_transaction.dart';
 import 'package:inventra_app/features/clients/providers/customer_provider.dart';
@@ -44,6 +44,9 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
   TabController? _mobileTabController;
   Customer? _selectedCustomer;
 
+  Product? _posSuggestion;
+  Timer? _suggestionTimer;
+
   @override
   void initState() {
     super.initState();
@@ -53,15 +56,35 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
     if (!_isDesktop) {
       _mobileTabController = TabController(length: 2, vsync: this);
     }
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  void _onSearchChanged() {
+    _suggestionTimer?.cancel();
+    final query = _searchController.text
+        .replaceAll('I', 'ı')
+        .replaceAll('İ', 'i')
+        .toLowerCase();
+    if (query.length < 2) {
+      if (_posSuggestion != null) setState(() => _posSuggestion = null);
+      return;
+    }
+    _suggestionTimer = Timer(const Duration(milliseconds: 400), () async {
+      final products = ref.read(productProvider).value ?? [];
+      final result = await findClosestProductAsync(query, products);
+      if (mounted) setState(() => _posSuggestion = result);
+    });
   }
 
   bool get _isDesktop => !Platform.isAndroid && !Platform.isIOS;
 
   @override
   void dispose() {
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _receivedAmountController.dispose();
     _mobileTabController?.dispose();
+    _suggestionTimer?.cancel();
     super.dispose();
   }
 
@@ -498,7 +521,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
     
     final bool isDesktop = MediaQuery.of(context).size.width > 800;
 
-    Widget cartSection = _buildCartSection(cartState, cartNotifier);
+    Widget cartSection = RepaintBoundary(child: _buildCartSection(cartState, cartNotifier));
     Widget productSection = _buildProductSection(productsState, cartNotifier);
 
     if (isDesktop) {
@@ -587,96 +610,15 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
   }
 
   /// Open barcode scanner
-  void _openBarcodeScanner(CartNotifier cartNotifier) async {
-
-    final MobileScannerController cameraController = MobileScannerController();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.black,
-      builder: (ctx) => SizedBox(
-        height: MediaQuery.of(context).size.height * 0.5,
-        child: Stack(
-          children: [
-            MobileScanner(
-              controller: cameraController,
-              errorBuilder: (context, error, child) {
-                return Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error, color: Colors.red, size: 48),
-                      const SizedBox(height: 16),
-                      Text('Kamera Hatası: ${error.errorCode.name}', style: const TextStyle(color: Colors.white)),
-                      const SizedBox(height: 8),
-                      Text(error.errorDetails?.message ?? '', style: const TextStyle(color: Colors.white70), textAlign: TextAlign.center),
-                      const SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        onPressed: () => cameraController.start(),
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Tekrar Dene'),
-                      ),
-                    ],
-                  ),
-                );
-              },
-              placeholderBuilder: (p0, p1) => Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const CircularProgressIndicator(color: AppTheme.secondaryAccent),
-                    const SizedBox(height: 16),
-                    const Text('Kamera başlatılıyor...', style: TextStyle(color: Colors.white70)),
-                  ],
-                ),
-              ),
-              onDetect: (capture) {
-                final barcodes = capture.barcodes;
-                if (barcodes.isEmpty) return;
-                final code = barcodes.first.rawValue;
-                if (code == null || code.isEmpty) return;
-                
-                Navigator.pop(ctx);
-                _processScannedBarcode(code, cartNotifier);
-              },
-            ),
-            Positioned(
-              top: 16, right: 16,
-              child: CircleAvatar(
-                backgroundColor: Colors.black54,
-                child: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Navigator.pop(ctx),
-                ),
-              ),
-            ),
-            Positioned(
-              top: 16, right: 64,
-              child: CircleAvatar(
-                backgroundColor: Colors.black54,
-                child: IconButton(
-                  icon: const Icon(Icons.flip_camera_ios, color: Colors.white),
-                  onPressed: () => cameraController.switchCamera(),
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: 24, left: 0, right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
-                  child: const Text('Barkodu kameranın önüne tutun', style: TextStyle(color: Colors.white, fontSize: 14)),
-                ),
-              ),
-            ),
-          ],
+  void _openBarcodeScanner(CartNotifier cartNotifier) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => BarcodeScannerPage(
+          onDetected: (code) => _processScannedBarcode(code, cartNotifier),
         ),
       ),
-    ).whenComplete(() {
-      cameraController.dispose();
-    });
+    );
   }
 
   Widget _buildCartSection(CartState cartState, CartNotifier cartNotifier) {
@@ -1522,9 +1464,9 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
               }).toList();
 
               if (filtered.isEmpty) {
-                final suggestions = (!_showQuickProducts && query.isNotEmpty)
-                    ? findClosestProducts(query, products)
-                    : <Product>[];
+                final suggestion = (!_showQuickProducts && query.isNotEmpty)
+                    ? _posSuggestion
+                    : null;
                 return Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1536,46 +1478,13 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                         textAlign: TextAlign.center,
                         style: TextStyle(color: AppTheme.textMuted),
                       ),
-                      if (suggestions.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 24),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: AppTheme.panelBackground,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppTheme.primaryAccent.withOpacity(0.4)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.search, size: 16, color: AppTheme.primaryAccent),
-                                  const SizedBox(width: 6),
-                                  Text('Şunu mu demek istediniz?',
-                                      style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 6,
-                                children: suggestions.map((s) => ActionChip(
-                                  label: Text(s.name,
-                                      style: TextStyle(
-                                          color: AppTheme.primaryAccent, fontSize: 12)),
-                                  backgroundColor: AppTheme.darkBackground,
-                                  side: BorderSide(
-                                      color: AppTheme.primaryAccent.withOpacity(0.5)),
-                                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                                  onPressed: () => setState(() {
-                                    _searchController.text = s.name;
-                                  }),
-                                )).toList(),
-                              ),
-                            ],
-                          ),
+                      if (suggestion != null) ...[
+                        const SizedBox(height: 16),
+                        _SuggestionCard(
+                          product: suggestion,
+                          onTap: () => setState(() {
+                            _searchController.text = suggestion.name;
+                          }),
                         ),
                       ],
                     ],
@@ -1907,5 +1816,61 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
         );
       }
     }
+  }
+}
+
+/// Tek ürün önerisi kartı — "Bunu mu demek istediniz?" sistemi
+class _SuggestionCard extends StatelessWidget {
+  final Product product;
+  final VoidCallback onTap;
+
+  const _SuggestionCard({required this.product, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppTheme.panelBackground,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.primaryAccent.withOpacity(0.45)),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.search, size: 18, color: AppTheme.primaryAccent),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Bunu mu demek istediniz?',
+                      style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      product.name,
+                      style: TextStyle(
+                        color: AppTheme.primaryAccent,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios, size: 14, color: AppTheme.primaryAccent.withOpacity(0.6)),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
