@@ -55,6 +55,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.invalidate(productProvider);
+      ref.read(productBarcodeProvider.notifier).refresh();
     });
     if (!_isDesktop) {
       _mobileTabController = TabController(length: 2, vsync: this);
@@ -680,6 +681,12 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
 
   /// Aynı barkod birden fazla ürüne bağlıysa (paylaşılan barkod) seçim gösterir.
   void _showBarcodeProductChoiceDialog(List<Product> matches, CartNotifier cartNotifier) {
+    const accentColors = [
+      AppTheme.dangerAccent,
+      AppTheme.secondaryAccent,
+      AppTheme.warningAccent,
+      AppTheme.infoAccent,
+    ];
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -688,16 +695,30 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
         title: const Text('Bu barkod birden fazla ürüne kayıtlı'),
         content: SizedBox(
           width: 320,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: matches.map((p) => ListTile(
-              title: Text(p.name),
-              subtitle: Text('${p.salePrice.toStringAsFixed(2)} ₺'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _showPriceSelectionDialog(p, cartNotifier);
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.6),
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: matches.length,
+              separatorBuilder: (_, _) => Divider(height: 1, color: AppTheme.borderBright),
+              itemBuilder: (_, index) {
+                final p = matches[index];
+                final color = accentColors[index % accentColors.length];
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: color.withOpacity(0.15),
+                    foregroundColor: color,
+                    child: Text('${index + 1}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                  title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text('${p.barcode} • Stok: ${formatQty(p.stock)} • ${p.salePrice.toStringAsFixed(2)} ₺'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showPriceSelectionDialog(p, cartNotifier);
+                  },
+                );
               },
-            )).toList(),
+            ),
           ),
         ),
         actions: [
@@ -720,6 +741,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
   }
 
   Widget _buildCartSection(CartState cartState, CartNotifier cartNotifier) {
+    return LayoutBuilder(builder: (context, constraints) {
     return Column(
       children: [
         // Tabs
@@ -767,7 +789,6 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
         
         // Cart Items
         Expanded(
-          flex: 1,
           child: cartNotifier.currentCart.isEmpty
           ? Center(child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -975,8 +996,8 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
         ),
 
         // Total & Payment
-        Flexible(
-          flex: 2,
+        ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: constraints.maxHeight * 0.6),
           child: SingleChildScrollView(
             child: Container(
           padding: const EdgeInsets.all(16),
@@ -1338,6 +1359,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
         ),
       ],
     );
+    });
   }
   void _showCustomerSelectorSheet() {
     showModalBottomSheet(

@@ -615,6 +615,8 @@ sudo systemctl status inventra-server
 
 > `data/config.json` ve `data/inventra.db` git tarafından takip edilmez — güncelleme sırasında silinmez.
 
+**Uygulama tarafında zorunlu güncelleme kontrolü:** Sunucu güncellendikten sonra, admin panelinden (`/admin/settings` → "Güncelleme Kontrolü") `min_app_version` ayarını yükseltirseniz, bu sürümün altındaki uygulamalar açılışta engellenip GitHub releases sayfasına yönlendirilir. **Bu mekanizma yalnızca v0.1.6 ve sonrası uygulama sürümlerinde çalışır** — v0.1.5 ve öncesi cihazlar bu kontrol kodunu hiç içermediği için otomatik uyarılamaz, bu cihazları manuel olarak güncellemeniz gerekir.
+
 ---
 
 ## 13. Sorun Giderme

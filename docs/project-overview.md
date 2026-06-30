@@ -380,7 +380,7 @@ Sunucu içinde tamamen Dart ile render edilen server-side HTML arayüz. Harici J
 | `/admin/devices` | Bekleyen eşleme isteklerini onayla/reddet; onaylı cihaz listesi, cihaz kaldırma |
 | `/admin/users` | Personel ekleme/silme (staff_id, şifre, ad, rol) |
 | `/admin/roles` | Rol tanımlama ve izin yönetimi |
-| `/admin/settings` | İşletme bilgileri, KDV varsayılanı, termal genişlik |
+| `/admin/settings` | İşletme bilgileri, KDV varsayılanı, termal genişlik, güncelleme kontrolü (`min_app_version`) |
 
 UI: Dark theme, CSS variables, responsive grid — tamamen Dart string interpolation ile render edilir.
 
@@ -407,7 +407,7 @@ UI: Dark theme, CSS variables, responsive grid — tamamen Dart string interpola
 | `AutoBackupService` | Excel (.xlsx) ve JSON formatında otomatik yedekleme, `Documents/InventraPOS/` klasörüne |
 | `CartTransferService` | WS üzerinden sepet transferi; dialog, kabul/ret, boş sekmeye aktarma |
 | `SoundService` | Başarı, hata ve bildirim sesleri |
-| `VersionCheckService` | `GET /api/version` ile `min_app_version` uyum kontrolü |
+| `VersionCheckService` | `GET /api/version` ile `min_app_version` uyum kontrolü (ayar web admin panelinden `/admin/settings` üzerinden yönetilir, v0.1.5 ve öncesi cihazlarda bu kontrol koşamaz — manuel güncelleme gerekir) |
 | `PdfService` | Satış fişi PDF oluşturma |
 | `ReceiptPrinterService` | Termal yazıcı ESC/POS komutları |
 | `ExcelService` | Ürün listesi ve satış verilerini Excel'e aktarma |

@@ -200,7 +200,7 @@ Sunucu çalıştıktan sonra tarayıcıdan `http://<sunucu-ip>:5000/admin` adres
 | **Loglar** | Aktivite logları (auth/ürün/satış/kasa/sistem tipine göre filtrelenebilir) |
 | **Cihazlar** | Eşleme isteklerini onaylama/reddetme, bağlı cihazlar |
 | **Kullanıcılar** | Kullanıcı ekleme/silme |
-| **Ayarlar** | İşletme bilgileri, port/host düzenleme, API key görüntüleme, sıfırlama |
+| **Ayarlar** | İşletme bilgileri, port/host düzenleme, API key görüntüleme, güncelleme kontrolü (minimum uygulama sürümü), sıfırlama |
 
 ---
 

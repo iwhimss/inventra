@@ -41,6 +41,7 @@ class AdminHandler {
     r.post('/admin/roles/delete', _deleteRole);
     r.get('/admin/settings', _settingsPage);
     r.post('/admin/settings', _saveSettings);
+    r.post('/admin/update-settings', _saveUpdateSettings);
     r.post('/admin/server-config', _saveServerConfig);
     r.post('/admin/reset', _resetServer);
     // New pages
@@ -517,6 +518,19 @@ class AdminHandler {
       </form>
 
       <div class="form-section" style="margin-top:32px">
+        <h3>🔄 Güncelleme Kontrolü</h3>
+        <p class="muted" style="margin-bottom:16px;font-size:13px">
+          Bu sürümün altındaki uygulamalar, güncelleme yapılana kadar kullanılamaz hale gelir ve
+          GitHub releases sayfasına yönlendirilir. Boş bırakılırsa kontrol yapılmaz.
+        </p>
+        <form method="POST" action="/admin/update-settings">
+          <label>Minimum Uygulama Sürümü</label>
+          <input type="text" name="min_app_version" value="${_esc(settingsMap['min_app_version'] ?? '')}" placeholder="örn. 0.1.7" style="max-width:200px">
+          <button type="submit" style="background:#6c5ce7;margin-top:4px">🔄 Güncelleme Ayarını Kaydet</button>
+        </form>
+      </div>
+
+      <div class="form-section" style="margin-top:32px">
         <h3>⚙️ Sunucu Yapılandırması</h3>
         <p class="muted" style="margin-bottom:16px;font-size:13px">
           Değişiklikler <code>config.json</code>'a kaydedilir. Geçerli olması için sunucuyu yeniden başlatın.
@@ -567,6 +581,20 @@ class AdminHandler {
       }
     }
     return _redirect('/admin/settings?msg=Kaydedildi');
+  }
+
+  Future<Response> _saveUpdateSettings(Request request) async {
+    if (!_isAuthenticated(request)) return _redirect('/admin/login');
+    final body = await request.readAsString();
+    final params = Uri.splitQueryString(body);
+    final value = params['min_app_version']?.trim() ?? '';
+    if (value.isEmpty) {
+      // Boş gönderilirse kontrol tamamen devre dışı bırakılır (satır silinir)
+      _db.delete('settings', where: 'key = ?', whereArgs: ['min_app_version']);
+    } else {
+      _db.insert('settings', {'key': 'min_app_version', 'value': value});
+    }
+    return _redirect('/admin/settings?msg=Güncelleme ayarı kaydedildi');
   }
 
   Future<Response> _saveServerConfig(Request request) async {

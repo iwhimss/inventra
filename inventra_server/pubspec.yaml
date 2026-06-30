@@ -1,6 +1,6 @@
 name: inventra_server
 description: Inventra POS Server - Pure Dart HTTP Server
-version: 0.1.6
+version: 0.1.7
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

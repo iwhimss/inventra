@@ -69,6 +69,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.invalidate(productProvider);
+      ref.read(productBarcodeProvider.notifier).refresh();
     });
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
