@@ -117,7 +117,11 @@ class ExcelService {
     }
   }
 
+  static bool _isImporting = false;
+
   static Future<void> importProducts(BuildContext context) async {
+    if (_isImporting) return; // Çift tetiklemeyi engelle (art arda hızlı tıklama)
+    _isImporting = true;
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
@@ -187,10 +191,11 @@ class ExcelService {
           return;
         }
 
-        // Onay dialogu
+        // Onay dialogu — dışarı tıklayarak/geri tuşuyla belirsiz kapanma olmasın diye barrierDismissible: false
         if (context.mounted) {
           final confirm = await showDialog<bool>(
             context: context,
+            barrierDismissible: false,
             builder: (ctx) => AlertDialog(
               title: const Text('İçe Aktarımı Onayla'),
               content: Text('${allProducts.length} ürün bulundu. İçe aktarmak istediğinize emin misiniz?\n\nMevcut barkodlarla eşleşen ürünler güncellenecektir.'),
@@ -268,6 +273,8 @@ class ExcelService {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Hata: $e'), backgroundColor: AppTheme.dangerAccent));
       }
+    } finally {
+      _isImporting = false;
     }
   }
 

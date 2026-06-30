@@ -62,6 +62,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
 
   Product? _productSuggestion;
   Timer? _productSuggestionTimer;
+  bool _isImportingExcel = false;
 
   @override
   void initState() {
@@ -438,8 +439,10 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                           const SizedBox(width: 4),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: () async {
+                              onPressed: _isImportingExcel ? null : () async {
+                                setState(() => _isImportingExcel = true);
                                 await ExcelService.importProducts(context);
+                                if (mounted) setState(() => _isImportingExcel = false);
                                 ref.invalidate(productProvider);
                               },
                               icon: const Icon(Icons.download, size: 14),
@@ -498,8 +501,10 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                             label: const Text('Dışa Aktar', style: TextStyle(fontSize: 13)),
                           ),
                           OutlinedButton.icon(
-                            onPressed: () async {
+                            onPressed: _isImportingExcel ? null : () async {
+                              setState(() => _isImportingExcel = true);
                               await ExcelService.importProducts(context);
+                              if (mounted) setState(() => _isImportingExcel = false);
                               ref.invalidate(productProvider);
                             },
                             icon: const Icon(Icons.download, size: 18),

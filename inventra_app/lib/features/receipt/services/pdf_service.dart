@@ -121,10 +121,11 @@ class PdfService {
   }
 
   // 1. Generate Product Barcode Label
-  static Future<void> printProductLabel(Product product, {bool showPrice = true}) async {
+  static Future<void> printProductLabel(Product product, {bool showPrice = true, String? barcodeOverride}) async {
     final pdf = pw.Document();
     final style = await _style(fontSize: 10, bold: true);
     final priceStyle = await _style(fontSize: 12, bold: true);
+    final barcode = barcodeOverride ?? product.barcode;
 
     pdf.addPage(
       pw.Page(
@@ -138,7 +139,7 @@ class PdfService {
               children: [
                 pw.Text(product.name, style: style, textAlign: pw.TextAlign.center, maxLines: 1),
                 pw.SizedBox(height: 2),
-                pw.BarcodeWidget(barcode: pw.Barcode.code128(), data: product.barcode, width: 40 * PdfPageFormat.mm, height: 10 * PdfPageFormat.mm),
+                pw.BarcodeWidget(barcode: pw.Barcode.code128(), data: barcode, width: 40 * PdfPageFormat.mm, height: 10 * PdfPageFormat.mm),
                 pw.SizedBox(height: 2),
                 if (showPrice)
                   pw.Text('${product.salePrice.toStringAsFixed(2)} ₺', style: priceStyle),
@@ -149,20 +150,21 @@ class PdfService {
       ),
     );
 
-    final filePath = await _getSavePath('Etiketler', 'Etiket_${product.barcode}_${DateTime.now().millisecondsSinceEpoch}.pdf');
+    final filePath = await _getSavePath('Etiketler', 'Etiket_${barcode}_${DateTime.now().millisecondsSinceEpoch}.pdf');
     if (filePath == null) return;
     await File(filePath).writeAsBytes(await pdf.save());
   }
 
-  /// Generate multiple labels in a single PDF
-  static Future<void> printProductLabels(List<MapEntry<Product, int>> productsWithQty, {bool showPrice = true}) async {
+  /// Generate multiple labels in a single PDF. `barcode` alanı verilmezse ürünün ana barkodu kullanılır.
+  static Future<void> printProductLabels(List<({Product product, int qty, String? barcode})> items, {bool showPrice = true}) async {
     final pdf = pw.Document();
     final style = await _style(fontSize: 10, bold: true);
     final priceStyle = await _style(fontSize: 12, bold: true);
 
-    for (var entry in productsWithQty) {
-      final product = entry.key;
-      final qty = entry.value;
+    for (var item in items) {
+      final product = item.product;
+      final qty = item.qty;
+      final barcode = item.barcode ?? product.barcode;
       for (int i = 0; i < qty; i++) {
         pdf.addPage(
           pw.Page(
@@ -176,7 +178,7 @@ class PdfService {
                   children: [
                     pw.Text(product.name, style: style, textAlign: pw.TextAlign.center, maxLines: 1),
                     pw.SizedBox(height: 2),
-                    pw.BarcodeWidget(barcode: pw.Barcode.code128(), data: product.barcode, width: 40 * PdfPageFormat.mm, height: 10 * PdfPageFormat.mm),
+                    pw.BarcodeWidget(barcode: pw.Barcode.code128(), data: barcode, width: 40 * PdfPageFormat.mm, height: 10 * PdfPageFormat.mm),
                     pw.SizedBox(height: 2),
                     if (showPrice)
                       pw.Text('${product.salePrice.toStringAsFixed(2)} ₺', style: priceStyle),

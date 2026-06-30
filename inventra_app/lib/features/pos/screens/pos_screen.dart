@@ -337,6 +337,53 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
     );
   }
 
+  void _showQuoteSizeDialog(CartNotifier cartNotifier) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.panelBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Fiyat Teklifi'),
+        content: const Text('Hangi boyutta oluşturulsun?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final path = await PdfService.printQuote(
+                cartNotifier.currentCart,
+                subtotal: cartNotifier.subtotal,
+                totalDiscount: cartNotifier.totalDiscount,
+                total: cartNotifier.cartTotal,
+              );
+              if (path != null && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fiyat teklifi kaydedildi: ${path.split('/').last}'), backgroundColor: AppTheme.secondaryAccent));
+              }
+            },
+            child: const Text('Termal (Fiş)'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.secondaryAccent),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final path = await PdfService.printQuote(
+                cartNotifier.currentCart,
+                subtotal: cartNotifier.subtotal,
+                totalDiscount: cartNotifier.totalDiscount,
+                total: cartNotifier.cartTotal,
+                isA4: true,
+              );
+              if (path != null && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fiyat teklifi kaydedildi: ${path.split('/').last}'), backgroundColor: AppTheme.secondaryAccent));
+              }
+            },
+            child: const Text('A4'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showQuantityDialog(CartItem item, CartNotifier cartNotifier) {
     final qtyCtrl = TextEditingController(text: formatQty(item.quantity));
     showDialog(
@@ -604,19 +651,20 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
     final sCode = code.replaceFirst(RegExp(r'^0+'), '');
     if (sCode.isEmpty) return;
 
-    var matches = products.where((p) =>
-       p.barcode.replaceFirst(RegExp(r'^0+'), '') == sCode
-    ).toList();
-
-    if (matches.isEmpty) {
-      // Ana barkodda bulunamadı — alias barkod havuzunda ara
-      final barcodeIndex = ref.read(productBarcodeProvider);
-      final productIds = {
-        ...barcodeIndex.productIdsForBarcode(code),
-        ...barcodeIndex.productIdsForBarcode(sCode),
-      };
-      matches = products.where((p) => productIds.contains(p.id)).toList();
-    }
+    // Ana barkod ve alias havuzu HER ZAMAN birlikte taranır — bir barkod aynı anda
+    // bir ürünün ana barkodu VE başka bir ürünün alias'ı olabilir, kısa devre yapılmaz.
+    final barcodeIndex = ref.read(productBarcodeProvider);
+    final productIds = {
+      ...barcodeIndex.productIdsForBarcode(code),
+      ...barcodeIndex.productIdsForBarcode(sCode),
+    };
+    final matchedIds = <String>{};
+    var matches = products.where((p) {
+      final isPrimary = p.barcode.replaceFirst(RegExp(r'^0+'), '') == sCode;
+      final isAlias = productIds.contains(p.id);
+      if ((isPrimary || isAlias) && matchedIds.add(p.id)) return true;
+      return false;
+    }).toList();
 
     if (matches.length == 1) {
       _showPriceSelectionDialog(matches.first, cartNotifier);
@@ -719,6 +767,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
         
         // Cart Items
         Expanded(
+          flex: 1,
           child: cartNotifier.currentCart.isEmpty
           ? Center(child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -926,7 +975,9 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
         ),
 
         // Total & Payment
-        SingleChildScrollView(
+        Flexible(
+          flex: 2,
+          child: SingleChildScrollView(
             child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -1074,17 +1125,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                       InkWell(
                         onTap: cartNotifier.currentCart.isEmpty
                             ? null
-                            : () async {
-                                final path = await PdfService.printQuote(
-                                  cartNotifier.currentCart,
-                                  subtotal: cartNotifier.subtotal,
-                                  totalDiscount: cartNotifier.totalDiscount,
-                                  total: cartNotifier.cartTotal,
-                                );
-                                if (path != null && mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fiyat teklifi kaydedildi: ${path.split('/').last}'), backgroundColor: AppTheme.secondaryAccent));
-                                }
-                              },
+                            : () => _showQuoteSizeDialog(cartNotifier),
                         child: Opacity(
                           opacity: cartNotifier.currentCart.isEmpty ? 0.4 : 1.0,
                           child: Container(
@@ -1294,6 +1335,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
           ),
         ),
         ),
+        ),
       ],
     );
   }
@@ -1417,15 +1459,18 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
         final sCode = val.trim().replaceFirst(RegExp(r'^0+'), '');
         if (sCode.isEmpty) return;
         final products = ref.read(productProvider).valueOrNull ?? [];
-        var matches = products.where((p) => p.barcode.replaceFirst(RegExp(r'^0+'), '') == sCode).toList();
-        if (matches.isEmpty) {
-          final barcodeIndex = ref.read(productBarcodeProvider);
-          final productIds = {
-            ...barcodeIndex.productIdsForBarcode(val.trim()),
-            ...barcodeIndex.productIdsForBarcode(sCode),
-          };
-          matches = products.where((p) => productIds.contains(p.id)).toList();
-        }
+        final barcodeIndex = ref.read(productBarcodeProvider);
+        final productIds = {
+          ...barcodeIndex.productIdsForBarcode(val.trim()),
+          ...barcodeIndex.productIdsForBarcode(sCode),
+        };
+        final matchedIds = <String>{};
+        var matches = products.where((p) {
+          final isPrimary = p.barcode.replaceFirst(RegExp(r'^0+'), '') == sCode;
+          final isAlias = productIds.contains(p.id);
+          if ((isPrimary || isAlias) && matchedIds.add(p.id)) return true;
+          return false;
+        }).toList();
         if (matches.length == 1) {
           _showPriceSelectionDialog(matches.first, cartNotifier);
           _searchController.clear();

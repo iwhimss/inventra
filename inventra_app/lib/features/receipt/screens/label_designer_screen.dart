@@ -11,6 +11,7 @@ import 'package:inventra_app/core/models/product.dart';
 import 'package:inventra_app/core/database/database_helper.dart';
 import 'package:inventra_app/core/network/api_client.dart';
 import 'package:inventra_app/features/product/providers/product_provider.dart';
+import 'package:inventra_app/features/product/providers/product_barcode_provider.dart';
 import 'package:inventra_app/features/receipt/services/pdf_service.dart';
 import 'package:inventra_app/core/services/sound_service.dart';
 import 'package:sqflite/sqflite.dart';
@@ -99,6 +100,7 @@ class _LabelDesignerScreenState extends ConsumerState<LabelDesignerScreen> with 
   LabelTemplate? _activeTemplate;
   LabelElement? _selectedElement;
   final Map<String, int> _selectedProducts = {};
+  final Map<String, String> _selectedLabelBarcodes = {}; // productId -> basılacak barkod (ana barkod dışındaki bir alias seçilmişse)
   final TextEditingController _searchCtrl = TextEditingController();
   final TextEditingController _widthCtrl = TextEditingController(text: '50');
   final TextEditingController _heightCtrl = TextEditingController(text: '30');
@@ -311,12 +313,12 @@ class _LabelDesignerScreenState extends ConsumerState<LabelDesignerScreen> with 
     final products = ref.read(productProvider).value ?? [];
     final showPrice = _activeTemplate!.elements.any((e) => e.type == 'price' && e.visible);
 
-    // Build list of (Product, quantity) entries
-    final List<MapEntry<Product, int>> labelsToGenerate = [];
+    // Build list of (Product, quantity, barcode) entries
+    final List<({Product product, int qty, String? barcode})> labelsToGenerate = [];
     int totalLabels = 0;
     for (var entry in _selectedProducts.entries) {
       final product = products.firstWhere((p) => p.id == entry.key, orElse: () => products.first);
-      labelsToGenerate.add(MapEntry(product, entry.value));
+      labelsToGenerate.add((product: product, qty: entry.value, barcode: _selectedLabelBarcodes[entry.key]));
       totalLabels += entry.value;
     }
 
@@ -801,17 +803,50 @@ class _LabelDesignerScreenState extends ConsumerState<LabelDesignerScreen> with 
                   error: (err, _) => Center(child: Text('Hata: $err')),
                   data: (products) {
                     final query = _searchCtrl.text.toLowerCase();
-                    final filtered = products.where((p) => p.name.toLowerCase().contains(query) || p.barcode.contains(query)).toList();
+                    final barcodeIndex = ref.watch(productBarcodeProvider);
+                    final filtered = products.where((p) =>
+                      p.name.toLowerCase().contains(query) ||
+                      p.barcode.contains(query) ||
+                      barcodeIndex.aliasesOf(p.id).any((b) => b.toLowerCase().contains(query))
+                    ).toList();
                     return ListView.separated(
                       itemCount: filtered.length,
                       separatorBuilder: (_, _) => Divider(height: 1, color: AppTheme.borderBright),
                       itemBuilder: (context, index) {
                         final p = filtered[index];
                         final count = _selectedProducts[p.id] ?? 0;
+                        final aliases = barcodeIndex.aliasesOf(p.id);
                         return ListTile(
                           dense: true,
                           title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                          subtitle: Text('${p.barcode} • ${p.salePrice.toStringAsFixed(2)} ₺', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text('${p.barcode} • ${p.salePrice.toStringAsFixed(2)} ₺', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                              if (count > 0 && aliases.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: DropdownButton<String>(
+                                    isDense: true,
+                                    value: _selectedLabelBarcodes[p.id] ?? p.barcode,
+                                    style: TextStyle(fontSize: 12, color: AppTheme.textMain),
+                                    dropdownColor: AppTheme.panelBackground,
+                                    items: [
+                                      DropdownMenuItem(value: p.barcode, child: Text('Ana Barkod (${p.barcode})')),
+                                      ...aliases.map((b) => DropdownMenuItem(value: b, child: Text('Alternatif ($b)'))),
+                                    ],
+                                    onChanged: (v) => setState(() {
+                                      if (v == null || v == p.barcode) {
+                                        _selectedLabelBarcodes.remove(p.id);
+                                      } else {
+                                        _selectedLabelBarcodes[p.id] = v;
+                                      }
+                                    }),
+                                  ),
+                                ),
+                            ],
+                          ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [

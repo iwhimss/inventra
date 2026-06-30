@@ -38,7 +38,7 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
     );
     _confirmController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 3),
+      duration: const Duration(milliseconds: 1500),
     )..addStatusListener((status) {
         if (status == AnimationStatus.completed) _confirmScan();
       });

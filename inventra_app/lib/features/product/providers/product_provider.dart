@@ -69,7 +69,15 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
               if (deltaResp.success && deltaResp.dataList.isNotEmpty) {
                 final changed = await compute(_parseProductsList, deltaResp.dataList);
                 final changedIds = changed.map((p) => p.id).toSet();
-                final existing = state.value ?? [];
+                // state.value, provider yeni oluşturulduysa (ör. ekrana her girişte
+                // tetiklenen invalidate sonrası) henüz null olabilir — bu durumda
+                // boş liste üzerine merge yapmak listeyi yalnızca değişen ürün(ler)e
+                // daraltır. Böyle bir durumda yerel önbellekten tam listeyi al.
+                var existing = state.value ?? [];
+                if (existing.isEmpty) {
+                  final cachedMaps = await db.query('products');
+                  existing = await compute(_parseProductsListFromMaps, cachedMaps);
+                }
                 final merged = [
                   ...existing.where((p) => !changedIds.contains(p.id)),
                   ...changed,
