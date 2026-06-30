@@ -34,6 +34,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
     'Hızlı Ürün (0/1)',
     'Anahtar Kelimeler',
     'Ürün Grubu',
+    'Alternatif Barkodlar',
   ];
 
   final Map<String, int?> _fieldMapping = {};
@@ -116,7 +117,8 @@ class _ConverterScreenState extends State<ConverterScreen> {
           for (var i = 0; i < _headers.length; i++) {
             final hLower = _headers[i].toLowerCase();
             final fLower = f.toLowerCase();
-            if (hLower.contains('barkod') && fLower.contains('barkod')) _fieldMapping[f] = i;
+            if (hLower.contains('barkod') && !hLower.contains('alternatif') && fLower == 'barkod (zorunlu)') _fieldMapping[f] = i;
+            if (hLower.contains('alternatif') && hLower.contains('barkod') && fLower.contains('alternatif')) _fieldMapping[f] = i;
             if ((hLower.contains('isim') || hLower.contains('ad')) && fLower.contains('adı')) _fieldMapping[f] = i;
             if (hLower.contains('alış') && fLower.contains('alış')) _fieldMapping[f] = i;
             if (hLower.contains('satış') && fLower.contains('satış')) _fieldMapping[f] = i;
@@ -168,6 +170,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
           TextCellValue('Hızlı Ürün'),
           TextCellValue('Anahtar Kelimeler'),
           TextCellValue('Ürün Grubu'),
+          TextCellValue('Alternatif Barkodlar'),
        ]);
 
        for (var i = 1; i < sourceTable.maxRows; i++) {
@@ -197,6 +200,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
              TextCellValue(getVal('Hızlı Ürün (0/1)')),
              TextCellValue(getVal('Anahtar Kelimeler')),
              TextCellValue(getVal('Ürün Grubu')),
+             TextCellValue(getVal('Alternatif Barkodlar')),
            ]);
          } catch (_) {}
        }

@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:inventra_app/core/models/product.dart';
 import 'package:inventra_app/features/backup/services/excel_service.dart';
 import 'package:inventra_app/features/product/providers/product_provider.dart';
+import 'package:inventra_app/features/product/providers/product_barcode_provider.dart';
 import 'package:inventra_app/core/database/database_helper.dart';
 import 'package:inventra_app/core/widgets/stock_warning_icon.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -18,6 +19,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:inventra_app/core/network/api_client.dart';
 import 'package:inventra_app/core/utils/string_utils.dart';
+import 'package:inventra_app/core/utils/format_utils.dart';
 
 class ProductsScreen extends ConsumerStatefulWidget {
   const ProductsScreen({super.key});
@@ -38,7 +40,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
   bool _filterFastProduct = false;
 
   // Stock tab
-  final Map<String, int> _stockAmounts = {};
+  final Map<String, double> _stockAmounts = {};
   final Map<String, TextEditingController> _stockControllers = {};
   final TextEditingController _stockSearchCtrl = TextEditingController();
   final Set<String> _bulkSelectedIds = {};
@@ -48,7 +50,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
   String _stockSearchQuery = '';
 
   // Stock remove tab
-  final Map<String, int> _stockRemoveAmounts = {};
+  final Map<String, double> _stockRemoveAmounts = {};
   final Map<String, TextEditingController> _stockRemoveControllers = {};
   final TextEditingController _stockRemoveSearchCtrl = TextEditingController();
   final Set<String> _bulkRemoveSelectedIds = {};
@@ -651,6 +653,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
             ),
             data: (products) {
               final query = _searchQuery;
+              final barcodeIndex = ref.watch(productBarcodeProvider);
               var filtered = query.isEmpty
                   ? products
                   : products.where((p) {
@@ -658,8 +661,11 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                       final nBarcode = p.barcode.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
                       final strippedBarcode = p.barcode.replaceFirst(RegExp(r'^0+'), '').toLowerCase();
                       final strippedQuery = query.replaceFirst(RegExp(r'^0+'), '');
-                      
+
                       if (nName.contains(query) || nBarcode.contains(query) || (strippedQuery.isNotEmpty && strippedBarcode.contains(strippedQuery))) {
+                        return true;
+                      }
+                      if (barcodeIndex.aliasesOf(p.id).any((b) => b.toLowerCase().contains(query))) {
                         return true;
                       }
                       if (p.keywords != null &&
@@ -952,7 +958,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                                         ),
                                         Text(
-                                          'Barkod: ${p.barcode} • Stok: ${p.stock}',
+                                          'Barkod: ${p.barcode} • Stok: ${formatQty(p.stock)}',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
@@ -1102,7 +1108,9 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                   .where((p) {
                     final nName = p.name.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
                     final nBarcode = p.barcode.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
-                    return nName.contains(query) || nBarcode.contains(query);
+                    if (nName.contains(query) || nBarcode.contains(query)) return true;
+                    final barcodeIndex = ref.read(productBarcodeProvider);
+                    return barcodeIndex.aliasesOf(p.id).any((b) => b.toLowerCase().contains(query));
                   })
                   .toList();
 
@@ -1153,8 +1161,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                   width: 80,
                                   child: TextField(
                                     controller: _bulkQtyCtrl,
-                                    keyboardType: TextInputType.number,
-                                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
                                     decoration: InputDecoration(
                                       hintText: 'Adet',
                                       isDense: true,
@@ -1167,7 +1175,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                   onPressed: () {
                                     final qtyText = _bulkQtyCtrl.text.trim();
                                     if (qtyText.isEmpty) return;
-                                    final qty = int.tryParse(qtyText);
+                                    final qty = double.tryParse(qtyText.replaceAll(',', '.'));
                                     if (qty != null && qty >= 0) {
                                       setState(() {
                                         for (var id in _bulkSelectedIds) {
@@ -1245,7 +1253,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                           ),
                                         ),
                                         Text(
-                                          'Barkod: ${p.barcode} • Mevcut Stok: ${p.stock}',
+                                          'Barkod: ${p.barcode} • Mevcut Stok: ${formatQty(p.stock)}',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
@@ -1273,12 +1281,12 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                             }
                                             _stockControllers[p.id]?.text =
                                                 (_stockAmounts[p.id] ?? 0) > 0
-                                                ? '${_stockAmounts[p.id]}'
+                                                ? formatQty(_stockAmounts[p.id]!)
                                                 : '';
                                           }),
                                         ),
                                         Text(
-                                          '$currentAdd',
+                                          formatQty(currentAdd),
                                           style: const TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 16,
@@ -1294,16 +1302,16 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                         onPressed: () {
                                           setState(() => _stockAmounts[p.id] = currentAdd + 1);
                                           _stockControllers[p.id]?.text =
-                                              '${_stockAmounts[p.id]}';
+                                              formatQty(_stockAmounts[p.id]!);
                                         },
                                       ),
                                       const SizedBox(width: 4),
                                       SizedBox(
                                         width: 60,
                                         child: TextField(
-                                          keyboardType: TextInputType.number,
+                                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                           inputFormatters: [
-                                            FilteringTextInputFormatter.digitsOnly,
+                                            FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
                                           ],
                                           decoration: const InputDecoration(
                                             hintText: 'Adet',
@@ -1316,11 +1324,11 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                           controller: _stockControllers.putIfAbsent(
                                             p.id,
                                             () => TextEditingController(
-                                              text: currentAdd > 0 ? '$currentAdd' : '',
+                                              text: currentAdd > 0 ? formatQty(currentAdd) : '',
                                             ),
                                           ),
                                           onChanged: (v) {
-                                            final val = int.tryParse(v) ?? 0;
+                                            final val = double.tryParse(v.replaceAll(',', '.')) ?? 0;
                                             bool changedCount = false;
                                             if (val > 0) {
                                               if (!_stockAmounts.containsKey(p.id)) {
@@ -1432,7 +1440,9 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                   .where((p) {
                     final nName = p.name.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
                     final nBarcode = p.barcode.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
-                    return nName.contains(query) || nBarcode.contains(query);
+                    if (nName.contains(query) || nBarcode.contains(query)) return true;
+                    final barcodeIndex = ref.read(productBarcodeProvider);
+                    return barcodeIndex.aliasesOf(p.id).any((b) => b.toLowerCase().contains(query));
                   })
                   .toList();
 
@@ -1483,8 +1493,8 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                   width: 80,
                                   child: TextField(
                                     controller: _bulkRemoveQtyCtrl,
-                                    keyboardType: TextInputType.number,
-                                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
                                     decoration: InputDecoration(
                                       hintText: 'Adet',
                                       isDense: true,
@@ -1497,7 +1507,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                   onPressed: () {
                                     final qtyText = _bulkRemoveQtyCtrl.text.trim();
                                     if (qtyText.isEmpty) return;
-                                    final qty = int.tryParse(qtyText);
+                                    final qty = double.tryParse(qtyText.replaceAll(',', '.'));
                                     if (qty != null && qty >= 0) {
                                       setState(() {
                                         for (var id in _bulkRemoveSelectedIds) {
@@ -1575,7 +1585,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                           ),
                                         ),
                                         Text(
-                                          'Barkod: ${p.barcode} • Mevcut Stok: ${p.stock}',
+                                          'Barkod: ${p.barcode} • Mevcut Stok: ${formatQty(p.stock)}',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
@@ -1603,12 +1613,12 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                             }
                                             _stockRemoveControllers[p.id]?.text =
                                                 (_stockRemoveAmounts[p.id] ?? 0) > 0
-                                                ? '${_stockRemoveAmounts[p.id]}'
+                                                ? formatQty(_stockRemoveAmounts[p.id]!)
                                                 : '';
                                           }),
                                         ),
                                         Text(
-                                          '$currentRemove',
+                                          formatQty(currentRemove),
                                           style: TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 16,
@@ -1625,16 +1635,16 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                         onPressed: () {
                                           setState(() => _stockRemoveAmounts[p.id] = currentRemove + 1);
                                           _stockRemoveControllers[p.id]?.text =
-                                              '${_stockRemoveAmounts[p.id]}';
+                                              formatQty(_stockRemoveAmounts[p.id]!);
                                         },
                                       ),
                                       const SizedBox(width: 4),
                                       SizedBox(
                                         width: 60,
                                         child: TextField(
-                                          keyboardType: TextInputType.number,
+                                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                           inputFormatters: [
-                                            FilteringTextInputFormatter.digitsOnly,
+                                            FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
                                           ],
                                           decoration: const InputDecoration(
                                             hintText: 'Adet',
@@ -1647,11 +1657,11 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                           controller: _stockRemoveControllers.putIfAbsent(
                                             p.id,
                                             () => TextEditingController(
-                                              text: currentRemove > 0 ? '$currentRemove' : '',
+                                              text: currentRemove > 0 ? formatQty(currentRemove) : '',
                                             ),
                                           ),
                                           onChanged: (v) {
-                                            final val = int.tryParse(v) ?? 0;
+                                            final val = double.tryParse(v.replaceAll(',', '.')) ?? 0;
                                             bool changedCount = false;
                                             if (val > 0) {
                                               if (!_stockRemoveAmounts.containsKey(p.id)) {
@@ -1696,7 +1706,7 @@ class _ProductFormDialog extends ConsumerStatefulWidget {
     String barcode,
     String name,
     double salePrice,
-    int stock,
+    double stock,
     double purchasePrice,
     double vatRate,
     String unit,
@@ -1737,13 +1747,18 @@ class _ProductFormDialogState extends ConsumerState<_ProductFormDialog> {
   String? _existingImagePath;
   bool _clearExistingImage = false;
 
+  // Barkod havuzu (alias barkodlar) — sadece mevcut ürün düzenlenirken yönetilir
+  List<Map<String, dynamic>> _aliasBarcodes = [];
+  bool _loadingAliases = false;
+  final _newAliasCtrl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     final p = widget.product;
     _barcodeCtrl = TextEditingController(text: p?.barcode ?? '');
     _nameCtrl = TextEditingController(text: p?.name ?? '');
-    _stockCtrl = TextEditingController(text: p?.stock.toString() ?? '');
+    _stockCtrl = TextEditingController(text: p != null ? formatQty(p.stock) : '');
     _purchasePriceCtrl = TextEditingController(
       text: p?.purchasePrice.toString() ?? '',
     );
@@ -1758,6 +1773,77 @@ class _ProductFormDialogState extends ConsumerState<_ProductFormDialog> {
     _selectedGroup = p?.productGroup;
     _existingImagePath = p?.imagePath;
     _loadGroups();
+    if (p != null) _loadAliasBarcodes();
+  }
+
+  Future<void> _loadAliasBarcodes() async {
+    if (widget.product == null) return;
+    setState(() => _loadingAliases = true);
+    try {
+      final resp = await ApiClient.instance.get('/api/products/${widget.product!.id}/barcodes');
+      if (resp.success) {
+        _aliasBarcodes = List<Map<String, dynamic>>.from(resp.dataList);
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _loadingAliases = false);
+  }
+
+  Future<void> _addAliasBarcode(String barcode, {String? resolve}) async {
+    final trimmed = barcode.trim();
+    if (widget.product == null || trimmed.isEmpty) return;
+    final resp = await ApiClient.instance.post('/api/products/${widget.product!.id}/barcodes', {
+      'barcode': trimmed,
+      if (resolve != null) 'resolve': resolve,
+    });
+    if (resp.success) {
+      _newAliasCtrl.clear();
+      await _loadAliasBarcodes();
+      if (mounted) ref.read(productBarcodeProvider.notifier).refresh();
+      return;
+    }
+    if (resp.data?['conflict'] == true) {
+      final existing = resp.data?['existing_product'] as Map?;
+      final existingName = existing?['name']?.toString() ?? 'başka bir ürün';
+      if (!mounted) return;
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppTheme.panelBackground,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Barkod Çakışması'),
+          content: Text('"$trimmed" barkodu zaten "$existingName" ürününe kayıtlı. Ne yapmak istersiniz?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
+            TextButton(onPressed: () => Navigator.pop(ctx, 'share'), child: const Text('İkisine de Bağla')),
+            ElevatedButton(onPressed: () => Navigator.pop(ctx, 'move'), child: const Text('Taşı')),
+          ],
+        ),
+      );
+      if (choice != null) await _addAliasBarcode(trimmed, resolve: choice);
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Hata: ${resp.error}'), backgroundColor: AppTheme.dangerAccent),
+      );
+    }
+  }
+
+  Future<void> _removeAliasBarcode(String barcodeId) async {
+    if (widget.product == null) return;
+    final resp = await ApiClient.instance.delete('/api/products/${widget.product!.id}/barcodes/$barcodeId');
+    if (resp.success) {
+      await _loadAliasBarcodes();
+      if (mounted) ref.read(productBarcodeProvider.notifier).refresh();
+    }
+  }
+
+  void _scanAliasBarcode() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => BarcodeScannerPage(onDetected: (code) => _addAliasBarcode(code)),
+      ),
+    );
   }
 
   Future<void> _loadGroups() async {
@@ -1884,7 +1970,7 @@ class _ProductFormDialogState extends ConsumerState<_ProductFormDialog> {
         double.tryParse(_purchasePriceCtrl.text.replaceAll(',', '.')) ?? 0.0;
     double vatRate =
         double.tryParse(_vatRateCtrl.text.replaceAll(',', '.')) ?? 20.0;
-    int stock = int.tryParse(_stockCtrl.text) ?? 0;
+    double stock = double.tryParse(_stockCtrl.text.replaceAll(',', '.')) ?? 0.0;
 
     final success = await widget.onSave(
       _barcodeCtrl.text,
@@ -1965,6 +2051,55 @@ class _ProductFormDialogState extends ConsumerState<_ProductFormDialog> {
                   ),
                 ],
               ),
+              if (widget.product != null) ...[
+                const SizedBox(height: 12),
+                Text('Barkod Havuzu (Alternatif Barkodlar)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                const SizedBox(height: 6),
+                if (_loadingAliases)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (_aliasBarcodes.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text('Henüz alternatif barkod eklenmedi.', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                  )
+                else
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: _aliasBarcodes.map((b) => Chip(
+                      label: Text(b['barcode'].toString()),
+                      onDeleted: () => _removeAliasBarcode(b['id'].toString()),
+                    )).toList(),
+                  ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _newAliasCtrl,
+                        decoration: const InputDecoration(labelText: 'Yeni Barkod Ekle', isDense: true),
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        onSubmitted: (v) => _addAliasBarcode(v),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: () => _addAliasBarcode(_newAliasCtrl.text),
+                      icon: const Icon(Icons.add_circle),
+                      tooltip: 'Ekle',
+                    ),
+                    IconButton(
+                      onPressed: _scanAliasBarcode,
+                      icon: Icon(Icons.qr_code_scanner, color: AppTheme.primaryAccent),
+                      tooltip: 'Tara',
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 12),
               TextField(
                 controller: _nameCtrl,
@@ -1977,8 +2112,12 @@ class _ProductFormDialogState extends ConsumerState<_ProductFormDialog> {
                     child: TextField(
                       controller: _stockCtrl,
                       decoration: InputDecoration(labelText: 'Stok'),
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 12),

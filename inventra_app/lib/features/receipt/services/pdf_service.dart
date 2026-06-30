@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:inventra_app/core/models/product.dart';
 import 'package:inventra_app/core/database/database_helper.dart';
 import 'package:inventra_app/features/pos/models/pos_models.dart';
+import 'package:inventra_app/core/utils/format_utils.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -235,7 +236,7 @@ class PdfService {
                   child: pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
-                      pw.Expanded(child: pw.Text("${item['quantity']}x ${item['product_name'] ?? 'Ürün'}", maxLines: 1, style: normalStyle)),
+                      pw.Expanded(child: pw.Text("${formatQty((item['quantity'] as num?)?.toDouble() ?? 1)}x ${item['product_name'] ?? 'Ürün'}", maxLines: 1, style: normalStyle)),
                       pw.Text("${(effectivePrice * item['quantity']).toStringAsFixed(2)} ₺", style: normalStyle),
                     ]
                   ),
@@ -276,6 +277,87 @@ class PdfService {
     );
 
     final filePath = await _getSavePath('Fişler', 'Fis_${payload['id'].toString().substring(0, 8)}_${DateTime.now().millisecondsSinceEpoch}.pdf');
+    if (filePath == null) return null;
+    await File(filePath).writeAsBytes(await pdf.save());
+    return filePath;
+  }
+
+  // 3. Generate Price Quote (Fiyat Teklifi) — satış yapılmadan, bilgi amaçlı
+  static Future<String?> printQuote(
+    List<CartItem> items, {
+    required double subtotal,
+    required double totalDiscount,
+    required double total,
+    bool isA4 = false,
+  }) async {
+    final pdf = pw.Document();
+    final businessName = await _getBusinessName();
+    final thermalSize = await _getThermalSize();
+
+    final titleStyle = await _style(fontSize: isA4 ? 24 : 16, bold: true);
+    final subtitleStyle = await _style(fontSize: 12);
+    final normalStyle = await _style(fontSize: 10);
+    final boldStyle = await _style(fontSize: isA4 ? 16 : 12, bold: true);
+    final smallStyle = await _style(fontSize: 10);
+
+    final format = isA4
+        ? PdfPageFormat.a4
+        : PdfPageFormat(thermalSize['width']! * PdfPageFormat.mm, double.infinity, marginAll: 5 * PdfPageFormat.mm);
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: format,
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Center(child: pw.Text(businessName, style: titleStyle)),
+              pw.Center(child: pw.Text("Fiyat Teklifi", style: subtitleStyle)),
+              pw.Divider(),
+              pw.Text("Tarih: ${DateTime.now().toString().substring(0, 16)}", style: normalStyle),
+              pw.Divider(),
+              ...items.map((item) {
+                return pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(vertical: 2),
+                  child: pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                    children: [
+                      pw.Expanded(child: pw.Text("${formatQty(item.quantity)}x ${item.productName}", maxLines: 1, style: normalStyle)),
+                      pw.Text("${item.lineTotal.toStringAsFixed(2)} ₺", style: normalStyle),
+                    ],
+                  ),
+                );
+              }),
+              if (totalDiscount > 0) ...[
+                pw.Divider(),
+                pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+                  pw.Text("İNDİRİM:", style: smallStyle),
+                  pw.Text("-${totalDiscount.toStringAsFixed(2)} ₺", style: smallStyle),
+                ]),
+              ],
+              pw.Divider(),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text("TOPLAM:", style: boldStyle),
+                  pw.Text("${total.toStringAsFixed(2)} ₺", style: boldStyle),
+                ],
+              ),
+              pw.Divider(),
+              pw.Center(
+                child: pw.Text(
+                  "Bu teklif bilgi amaçlıdır, fiyat değişikliği olabilir.",
+                  style: smallStyle,
+                  textAlign: pw.TextAlign.center,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    final filePath = await _getSavePath('Teklifler', 'Teklif_${DateTime.now().millisecondsSinceEpoch}.pdf');
     if (filePath == null) return null;
     await File(filePath).writeAsBytes(await pdf.save());
     return filePath;

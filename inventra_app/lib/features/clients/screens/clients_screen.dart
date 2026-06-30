@@ -16,6 +16,7 @@ import 'package:inventra_app/core/network/api_client.dart';
 import 'package:inventra_app/core/services/auto_backup_service.dart';
 import 'package:inventra_app/features/backup/services/client_backup_service.dart';
 import 'package:inventra_app/core/utils/responsive_utils.dart';
+import 'package:inventra_app/core/utils/format_utils.dart';
 
 class ClientsScreen extends ConsumerStatefulWidget {
   const ClientsScreen({super.key});
@@ -619,14 +620,14 @@ class _ClientsScreenState extends ConsumerState<ClientsScreen>
                   itemBuilder: (_, i) {
                     final item = items[i];
                     final name = item['product_name'] as String? ?? '';
-                    final qty = item['quantity'];
+                    final qty = (item['quantity'] as num?)?.toDouble() ?? 1;
                     final unitPrice = (item['unit_price'] as num).toDouble();
                     final total = (item['total_price'] as num).toDouble();
                     return ListTile(
                       dense: true,
                       title: Text(name,
                           style: const TextStyle(fontWeight: FontWeight.bold)),
-                      subtitle: Text('$qty adet × ${unitPrice.toStringAsFixed(2)} ₺'),
+                      subtitle: Text('${formatQty(qty)} adet × ${unitPrice.toStringAsFixed(2)} ₺'),
                       trailing: Text(
                         '${total.toStringAsFixed(2)} ₺',
                         style: TextStyle(

@@ -192,7 +192,7 @@ class AutoBackupService {
 
       for (var p in products) {
         sheetObject.appendRow([
-          TextCellValue(p.barcode), TextCellValue(p.name), IntCellValue(p.stock),
+          TextCellValue(p.barcode), TextCellValue(p.name), DoubleCellValue(p.stock),
           DoubleCellValue(p.purchasePrice), DoubleCellValue(p.salePrice),
           p.salePrice2 != null ? DoubleCellValue(p.salePrice2!) : TextCellValue(''),
           p.salePrice3 != null ? DoubleCellValue(p.salePrice3!) : TextCellValue(''),

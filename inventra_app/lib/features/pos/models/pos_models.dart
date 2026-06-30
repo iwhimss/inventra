@@ -4,7 +4,7 @@ class CartItem {
   final String productId;
   final String productName;
   final double price;
-  int quantity;
+  double quantity;
   double discount; // absolute amount discounted per unit
 
   CartItem({
@@ -33,7 +33,7 @@ class CartItem {
       productId: map['product_id'] ?? '',
       productName: map['product_name'] ?? '',
       price: map['price']?.toDouble() ?? 0.0,
-      quantity: map['quantity']?.toInt() ?? 1,
+      quantity: (map['quantity'] as num?)?.toDouble() ?? 1.0,
       discount: map['discount']?.toDouble() ?? 0.0,
     );
   }

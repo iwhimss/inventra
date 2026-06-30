@@ -2,7 +2,7 @@ class SaleItem {
   final String id;
   final String saleId;
   final String productId;
-  final int quantity;
+  final double quantity;
   final double unitPrice;
   final double totalPrice;
 
@@ -31,7 +31,7 @@ class SaleItem {
       id: map['id'],
       saleId: map['sale_id'],
       productId: map['product_id'],
-      quantity: map['quantity'],
+      quantity: (map['quantity'] as num).toDouble(),
       unitPrice: map['unit_price'],
       totalPrice: map['total_price'],
     );

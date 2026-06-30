@@ -133,7 +133,7 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
     String barcode,
     String name,
     double salePrice,
-    int stock, {
+    double stock, {
     double purchasePrice = 0,
     double vatRate = 20,
     String unit = "Adet",
@@ -261,7 +261,7 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
     }
   }
 
-  Future<int> bulkAddStock(Map<String, int> productStocks) async {
+  Future<int> bulkAddStock(Map<String, double> productStocks) async {
     try {
       final items = productStocks.entries.map((e) => {
         'product_id': e.key,
@@ -279,7 +279,7 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
     }
   }
 
-  Future<int> bulkSubtractStock(Map<String, int> productStocks) async {
+  Future<int> bulkSubtractStock(Map<String, double> productStocks) async {
     try {
       final items = productStocks.entries.map((e) => {
         'product_id': e.key,

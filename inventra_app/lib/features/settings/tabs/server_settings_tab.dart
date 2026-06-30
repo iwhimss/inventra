@@ -28,6 +28,9 @@ class _ServerSettingsTabState extends ConsumerState<ServerSettingsTab> {
   final _thermalWidthCtrl = TextEditingController();
   bool _askReceipt = true;
 
+  // Update
+  final _minAppVersionCtrl = TextEditingController();
+
   // Product Groups
   List<Map<String, dynamic>> _productGroups = [];
   final _newProductGroupCtrl = TextEditingController();
@@ -48,6 +51,7 @@ class _ServerSettingsTabState extends ConsumerState<ServerSettingsTab> {
     _businessTaxIdCtrl.dispose();
     _defaultVatCtrl.dispose();
     _thermalWidthCtrl.dispose();
+    _minAppVersionCtrl.dispose();
     _newProductGroupCtrl.dispose();
     super.dispose();
   }
@@ -65,6 +69,7 @@ class _ServerSettingsTabState extends ConsumerState<ServerSettingsTab> {
             case 'business_address': _businessAddressCtrl.text = v; break;
             case 'business_phone': _businessPhoneCtrl.text = v; break;
             case 'business_tax_id': _businessTaxIdCtrl.text = v; break;
+            case 'min_app_version': _minAppVersionCtrl.text = v; break;
           }
         }
       }
@@ -114,6 +119,20 @@ class _ServerSettingsTabState extends ConsumerState<ServerSettingsTab> {
       }
     } catch (e) {
       if (mounted) NotificationService.showError('Hata: $e');
+    }
+  }
+
+  Future<void> _saveUpdateSettings() async {
+    final resp = await ApiClient.instance.post('/api/settings/bulk', {
+      'settings': {'min_app_version': _minAppVersionCtrl.text.trim()},
+    });
+    if (resp.success) {
+      if (mounted) {
+        SoundService.playNotification();
+        NotificationService.showSuccess('Güncelleme ayarı kaydedildi.');
+      }
+    } else {
+      if (mounted) NotificationService.showError('Hata: ${resp.error}');
     }
   }
 
@@ -207,6 +226,33 @@ class _ServerSettingsTabState extends ConsumerState<ServerSettingsTab> {
               alignment: Alignment.centerRight,
               child: ElevatedButton.icon(
                 onPressed: _saveDefaults,
+                icon: const Icon(Icons.save, size: 16),
+                label: const Text('KAYDET'),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 16),
+
+          // Update
+          _sectionCard('Güncelleme', Icons.system_update, [
+            TextField(
+              controller: _minAppVersionCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Minimum Uygulama Sürümü',
+                isDense: true,
+                hintText: 'örn. 0.1.6',
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Bu sürümün altındaki uygulamalar, güncelleme yapılana kadar kullanılamaz. Boş bırakılırsa kontrol yapılmaz.',
+              style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                onPressed: _saveUpdateSettings,
                 icon: const Icon(Icons.save, size: 16),
                 label: const Text('KAYDET'),
               ),

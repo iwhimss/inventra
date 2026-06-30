@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import 'package:inventra_app/core/theme/app_theme.dart';
 import 'package:inventra_app/core/models/product.dart';
 import 'package:inventra_app/features/product/providers/product_provider.dart';
+import 'package:inventra_app/features/product/providers/product_barcode_provider.dart';
 import 'package:inventra_app/features/pos/providers/cart_provider.dart';
 import 'package:inventra_app/features/pos/providers/sync_provider.dart';
 import 'package:inventra_app/features/pos/models/pos_models.dart';
@@ -18,6 +19,7 @@ import 'package:inventra_app/core/services/sound_service.dart';
 import 'package:inventra_app/core/network/api_client.dart';
 import 'package:inventra_app/core/network/websocket_service.dart';
 import 'package:inventra_app/core/widgets/stock_warning_icon.dart';
+import 'package:inventra_app/core/utils/format_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:inventra_app/core/widgets/barcode_scanner_page.dart';
 import 'package:inventra_app/core/models/customer.dart';
@@ -336,20 +338,22 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
   }
 
   void _showQuantityDialog(CartItem item, CartNotifier cartNotifier) {
-    final qtyCtrl = TextEditingController(text: item.quantity.toString());
+    final qtyCtrl = TextEditingController(text: formatQty(item.quantity));
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         backgroundColor: AppTheme.panelBackground,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(item.productName),
         content: TextField(
           controller: qtyCtrl,
-          keyboardType: TextInputType.number,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
           autofocus: true,
           decoration: InputDecoration(labelText: 'Adet'),
           onSubmitted: (val) {
-            int? qty = int.tryParse(val);
+            double? qty = double.tryParse(val.replaceAll(',', '.'));
             if (qty != null && qty > 0) {
               cartNotifier.setQuantity(item.productId, qty);
             }
@@ -360,7 +364,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
           TextButton(onPressed: () => Navigator.pop(ctx), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
           ElevatedButton(
             onPressed: () {
-              int? qty = int.tryParse(qtyCtrl.text);
+              double? qty = double.tryParse(qtyCtrl.text.replaceAll(',', '.'));
               if (qty != null && qty > 0) {
                 cartNotifier.setQuantity(item.productId, qty);
               }
@@ -390,6 +394,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
             previewAmount = double.tryParse(amountCtrl.text) ?? 0;
           }
           return AlertDialog(
+            scrollable: true,
             title: const Text('Sepet İndirimi'),
             content: SizedBox(
               width: context.dialogWidth(300),
@@ -461,6 +466,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
             previewAmount = double.tryParse(amountCtrl.text) ?? 0;
           }
           return AlertDialog(
+            scrollable: true,
             title: Text('İndirim: ${item.productName}'),
             content: SizedBox(
               width: 300,
@@ -596,19 +602,61 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
     // Find product by barcode, ignoring leading zeros
     final products = ref.read(productProvider).valueOrNull ?? [];
     final sCode = code.replaceFirst(RegExp(r'^0+'), '');
-    final match = products.where((p) => 
-       p.barcode.replaceFirst(RegExp(r'^0+'), '') == sCode && sCode.isNotEmpty
+    if (sCode.isEmpty) return;
+
+    var matches = products.where((p) =>
+       p.barcode.replaceFirst(RegExp(r'^0+'), '') == sCode
     ).toList();
-    
-    if (match.isNotEmpty) {
-      final product = match.first;
-      _showPriceSelectionDialog(product, cartNotifier);
+
+    if (matches.isEmpty) {
+      // Ana barkodda bulunamadı — alias barkod havuzunda ara
+      final barcodeIndex = ref.read(productBarcodeProvider);
+      final productIds = {
+        ...barcodeIndex.productIdsForBarcode(code),
+        ...barcodeIndex.productIdsForBarcode(sCode),
+      };
+      matches = products.where((p) => productIds.contains(p.id)).toList();
+    }
+
+    if (matches.length == 1) {
+      _showPriceSelectionDialog(matches.first, cartNotifier);
+    } else if (matches.length > 1) {
+      _showBarcodeProductChoiceDialog(matches, cartNotifier);
     } else {
       SoundService.playError();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Barkod bulunamadı: $code'), backgroundColor: AppTheme.dangerAccent),
       );
     }
+  }
+
+  /// Aynı barkod birden fazla ürüne bağlıysa (paylaşılan barkod) seçim gösterir.
+  void _showBarcodeProductChoiceDialog(List<Product> matches, CartNotifier cartNotifier) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.panelBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Bu barkod birden fazla ürüne kayıtlı'),
+        content: SizedBox(
+          width: 320,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: matches.map((p) => ListTile(
+              title: Text(p.name),
+              subtitle: Text('${p.salePrice.toStringAsFixed(2)} ₺'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showPriceSelectionDialog(p, cartNotifier);
+              },
+            )).toList(),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
+        ],
+      ),
+    );
   }
 
   /// Open barcode scanner
@@ -743,8 +791,8 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                                 const SizedBox(height: 6),
                                 Text(
                                   item.discount > 0
-                                    ? '${item.price.toStringAsFixed(2)} ₺ → ${item.effectivePrice.toStringAsFixed(2)} ₺ × ${item.quantity} = ${item.lineTotal.toStringAsFixed(2)} ₺'
-                                    : '${item.price.toStringAsFixed(2)} ₺ × ${item.quantity} = ${(item.quantity * item.price).toStringAsFixed(2)} ₺',
+                                    ? '${item.price.toStringAsFixed(2)} ₺ → ${item.effectivePrice.toStringAsFixed(2)} ₺ × ${formatQty(item.quantity)} = ${item.lineTotal.toStringAsFixed(2)} ₺'
+                                    : '${item.price.toStringAsFixed(2)} ₺ × ${formatQty(item.quantity)} = ${(item.quantity * item.price).toStringAsFixed(2)} ₺',
                                   style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                                 ),
                               ],
@@ -774,7 +822,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                                         borderRadius: BorderRadius.circular(8),
                                         border: Border.all(color: AppTheme.borderBright),
                                       ),
-                                      child: Text('${item.quantity}', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                      child: Text(formatQty(item.quantity), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                                     ),
                                   ),
                                   const SizedBox(width: 10),
@@ -1019,6 +1067,37 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                               SizedBox(width: 4),
                               Text('Sil', style: TextStyle(fontSize: 12, color: AppTheme.dangerAccent)),
                             ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: cartNotifier.currentCart.isEmpty
+                            ? null
+                            : () async {
+                                final path = await PdfService.printQuote(
+                                  cartNotifier.currentCart,
+                                  subtotal: cartNotifier.subtotal,
+                                  totalDiscount: cartNotifier.totalDiscount,
+                                  total: cartNotifier.cartTotal,
+                                );
+                                if (path != null && mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fiyat teklifi kaydedildi: ${path.split('/').last}'), backgroundColor: AppTheme.secondaryAccent));
+                                }
+                              },
+                        child: Opacity(
+                          opacity: cartNotifier.currentCart.isEmpty ? 0.4 : 1.0,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(color: AppTheme.secondaryAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppTheme.secondaryAccent.withOpacity(0.3))),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.request_quote, color: AppTheme.secondaryAccent, size: 14),
+                                const SizedBox(width: 4),
+                                Text('Fiyat Teklifi', style: TextStyle(fontSize: 12, color: AppTheme.secondaryAccent)),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -1338,9 +1417,21 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
         final sCode = val.trim().replaceFirst(RegExp(r'^0+'), '');
         if (sCode.isEmpty) return;
         final products = ref.read(productProvider).valueOrNull ?? [];
-        final match = products.where((p) => p.barcode.replaceFirst(RegExp(r'^0+'), '') == sCode).toList();
-        if (match.isNotEmpty) {
-          _showPriceSelectionDialog(match.first, cartNotifier);
+        var matches = products.where((p) => p.barcode.replaceFirst(RegExp(r'^0+'), '') == sCode).toList();
+        if (matches.isEmpty) {
+          final barcodeIndex = ref.read(productBarcodeProvider);
+          final productIds = {
+            ...barcodeIndex.productIdsForBarcode(val.trim()),
+            ...barcodeIndex.productIdsForBarcode(sCode),
+          };
+          matches = products.where((p) => productIds.contains(p.id)).toList();
+        }
+        if (matches.length == 1) {
+          _showPriceSelectionDialog(matches.first, cartNotifier);
+          _searchController.clear();
+          setState(() {});
+        } else if (matches.length > 1) {
+          _showBarcodeProductChoiceDialog(matches, cartNotifier);
           _searchController.clear();
           setState(() {});
         }
@@ -1445,14 +1536,19 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
             error: (err, stack) => Center(child: Text('Hata: $err', style: TextStyle(color: AppTheme.dangerAccent))),
             data: (products) {
               final query = _searchController.text.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
+              final barcodeIndex = ref.watch(productBarcodeProvider);
               var filtered = products.where((p) {
                 final nName = p.name.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
                 final nBarcode = p.barcode.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
                 final strippedBarcode = p.barcode.replaceFirst(RegExp(r'^0+'), '').toLowerCase();
                 final strippedQuery = query.replaceFirst(RegExp(r'^0+'), '');
-                
-                bool matchesSearch = nName.contains(query) || nBarcode.contains(query) || 
+
+                bool matchesSearch = nName.contains(query) || nBarcode.contains(query) ||
                                      (strippedQuery.isNotEmpty && strippedBarcode.contains(strippedQuery));
+                // Alias barkod havuzunda da ara
+                if (!matchesSearch && query.isNotEmpty) {
+                  matchesSearch = barcodeIndex.aliasesOf(p.id).any((b) => b.toLowerCase().contains(query));
+                }
                 // Also search keywords
                 if (p.keywords != null && p.keywords!.isNotEmpty) {
                   final nKeywords = p.keywords!.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();

@@ -9,6 +9,7 @@ import 'package:inventra_app/features/pos/models/pos_models.dart';
 import 'package:inventra_app/features/receipt/services/pdf_service.dart';
 import 'package:inventra_app/core/services/sound_service.dart';
 import 'package:inventra_app/features/analytics/providers/sales_history_provider.dart';
+import 'package:inventra_app/core/utils/format_utils.dart';
 
 class SalesHistoryScreen extends ConsumerStatefulWidget {
   const SalesHistoryScreen({super.key});
@@ -152,7 +153,7 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Expanded(child: Text('${item['quantity']}x ${item['product_name'] ?? 'Ürün'}', style: const TextStyle(fontSize: 13))),
+                          Expanded(child: Text('${formatQty((item['quantity'] as num?)?.toDouble() ?? 1)}x ${item['product_name'] ?? 'Ürün'}', style: const TextStyle(fontSize: 13))),
                           Text('${(item['total_price'] as num).toStringAsFixed(2)} ₺', style: const TextStyle(fontWeight: FontWeight.bold)),
                         ],
                       ),

@@ -675,7 +675,8 @@ class AdminHandler {
     ''';
 
     final tableRows = products.map((p) {
-      final stock = (p['stock'] as num?)?.toInt() ?? 0;
+      final stock = (p['stock'] as num?)?.toDouble() ?? 0.0;
+      final stockDisplay = stock == stock.roundToDouble() ? stock.toInt().toString() : stock.toString();
       final stockColor = stock == 0
           ? 'color:var(--danger);font-weight:700'
           : stock <= 5
@@ -703,11 +704,11 @@ class AdminHandler {
             <form method="POST" action="/admin/products/update" style="display:flex;gap:6px;align-items:center">
               <input type="hidden" name="id" value="$id">
               <input type="hidden" name="field" value="stock">
-              <input type="number" name="value" value="$stock" min="0"
+              <input type="number" name="value" value="$stockDisplay" min="0" step="any"
                 style="width:80px;margin:0;font-size:13px;padding:6px 8px;$stockColor" onchange="this.form.submit()">
             </form>
           </td>
-          <td style="$stockColor">$stock</td>
+          <td style="$stockColor">$stockDisplay</td>
         </tr>
       ''';
     }).join();
@@ -747,7 +748,7 @@ class AdminHandler {
 
     // Only allow safe fields
     if (field == 'stock') {
-      final stock = int.tryParse(value);
+      final stock = double.tryParse(value);
       if (stock == null || stock < 0) return _redirect(_buildUrl('/admin/products', {'msg': 'Geçersiz stok değeri'}));
       _db.execute('UPDATE products SET stock = ?, updated_at = ? WHERE id = ?',
           [stock, DateTime.now().toIso8601String(), id]);

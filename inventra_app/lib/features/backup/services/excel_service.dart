@@ -26,6 +26,20 @@ class ExcelService {
       final maps = await db.query('products');
       List<Product> products = maps.map((e) => Product.fromMap(e)).toList();
 
+      // Alias barkod havuzu — product_id bazında grupla
+      final aliasByProduct = <String, List<String>>{};
+      try {
+        final aliasResp = await ApiClient.instance.get('/api/product-barcodes');
+        if (aliasResp.success) {
+          for (final row in aliasResp.dataList) {
+            final pid = row['product_id']?.toString();
+            final code = row['barcode']?.toString();
+            if (pid == null || code == null || code.isEmpty) continue;
+            aliasByProduct.putIfAbsent(pid, () => []).add(code);
+          }
+        }
+      } catch (_) {}
+
       var excel = Excel.createExcel();
       Sheet sheetObject = excel['Products'];
       excel.setDefaultSheet('Products');
@@ -44,6 +58,7 @@ class ExcelService {
         TextCellValue('Hızlı Ürün'),
         TextCellValue('Anahtar Kelimeler'),
         TextCellValue('Ürün Grubu'),
+        TextCellValue('Alternatif Barkodlar'),
       ]);
 
       // Data Rows
@@ -51,7 +66,7 @@ class ExcelService {
         sheetObject.appendRow([
           TextCellValue(p.barcode),
           TextCellValue(p.name),
-          IntCellValue(p.stock),
+          DoubleCellValue(p.stock),
           DoubleCellValue(p.purchasePrice),
           DoubleCellValue(p.salePrice),
           p.salePrice2 != null ? DoubleCellValue(p.salePrice2!) : TextCellValue(''),
@@ -61,6 +76,7 @@ class ExcelService {
           IntCellValue(p.isFastProduct ? 1 : 0),
           TextCellValue(p.keywords ?? ''),
           TextCellValue(p.productGroup ?? ''),
+          TextCellValue((aliasByProduct[p.id] ?? const []).join(',')),
         ]);
       }
 
@@ -126,7 +142,7 @@ class ExcelService {
             if (barcode.isEmpty) continue;
 
             String name = row[1]?.value.toString() ?? 'Bilinmeyen Ürün';
-            int stock = int.tryParse(row[2]?.value.toString() ?? '0') ?? 0;
+            double stock = _parseDouble(row[2]?.value.toString() ?? '0');
             double purchasePrice = _parseDouble(row[3]?.value.toString() ?? '0');
             double salePrice = _parseDouble(row[4]?.value.toString() ?? '0');
             String sp2Str = row.length > 5 ? (row[5]?.value.toString() ?? '') : '';
@@ -138,6 +154,7 @@ class ExcelService {
             bool isFast = (int.tryParse(row.length > 9 ? (row[9]?.value.toString() ?? '0') : '0') ?? 0) == 1;
             String keywords = row.length > 10 ? (row[10]?.value.toString() ?? '') : '';
             String productGroup = row.length > 11 ? (row[11]?.value.toString() ?? '') : '';
+            String aliasBarcodes = row.length > 12 ? (row[12]?.value.toString() ?? '') : '';
 
             if (productGroup.isNotEmpty) productGroups.add(productGroup);
 
@@ -153,6 +170,7 @@ class ExcelService {
               'is_fast_product': isFast ? 1 : 0,
               'keywords': keywords.isNotEmpty ? keywords : null,
               'product_group': productGroup.isNotEmpty ? productGroup : null,
+              if (aliasBarcodes.isNotEmpty) 'alias_barcodes': aliasBarcodes,
             };
 
             if (salePrice2 != null) productMap['sale_price_2'] = salePrice2;

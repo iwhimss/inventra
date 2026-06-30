@@ -92,13 +92,13 @@ class CartNotifier extends StateNotifier<CartState> {
     state = state.copyWith(carts: newCarts);
   }
 
-  void updateQuantity(String productId, int delta) {
+  void updateQuantity(String productId, num delta) {
     var newCarts = List<List<CartItem>>.from(state.carts);
     var cart = List<CartItem>.from(newCarts[state.activeTab]);
 
     int index = cart.indexWhere((item) => item.productId == productId);
     if (index != -1) {
-      int newQty = cart[index].quantity + delta;
+      double newQty = cart[index].quantity + delta;
       if (newQty > 0) {
         cart[index].quantity = newQty;
       }
@@ -108,7 +108,7 @@ class CartNotifier extends StateNotifier<CartState> {
     state = state.copyWith(carts: newCarts);
   }
 
-  void setQuantity(String productId, int qty) {
+  void setQuantity(String productId, double qty) {
     if (qty <= 0) return;
     var newCarts = List<List<CartItem>>.from(state.carts);
     var cart = List<CartItem>.from(newCarts[state.activeTab]);
@@ -207,7 +207,7 @@ class CartNotifier extends StateNotifier<CartState> {
       productId: item['product_id'] ?? '',
       productName: item['product_name'] ?? '',
       price: (item['price'] as num?)?.toDouble() ?? 0.0,
-      quantity: (item['quantity'] as num?)?.toInt() ?? 1,
+      quantity: (item['quantity'] as num?)?.toDouble() ?? 1.0,
       discount: (item['discount'] as num?)?.toDouble() ?? 0.0,
     )).toList();
 

@@ -19,7 +19,11 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
   final MobileScannerController _controller = MobileScannerController();
   late final AnimationController _scanLineController;
   late final Animation<double> _scanLineAnim;
-  DateTime? _lastScanTime;
+
+  // Onay bekleme: bir barkod algılanınca hemen kabul edilmez, aynı barkod
+  // 3 saniye boyunca kesintisiz algılanmaya devam ederse kabul edilir.
+  late final AnimationController _confirmController;
+  String? _candidateCode;
 
   @override
   void initState() {
@@ -32,27 +36,52 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
       parent: _scanLineController,
       curve: Curves.easeInOut,
     );
+    _confirmController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) _confirmScan();
+      });
   }
 
   @override
   void dispose() {
     _scanLineController.dispose();
+    _confirmController.dispose();
     _controller.dispose();
     super.dispose();
   }
 
   void _onDetect(BarcodeCapture capture) {
-    if (capture.barcodes.isEmpty) return;
-    final code = capture.barcodes.first.rawValue;
-    if (code == null || code.isEmpty) return;
-
-    final now = DateTime.now();
-    if (_lastScanTime != null &&
-        now.difference(_lastScanTime!).inMilliseconds < 1500) {
+    if (capture.barcodes.isEmpty) {
+      _cancelCandidate();
       return;
     }
-    _lastScanTime = now;
+    final code = capture.barcodes.first.rawValue;
+    if (code == null || code.isEmpty) {
+      _cancelCandidate();
+      return;
+    }
 
+    if (_candidateCode != code) {
+      setState(() => _candidateCode = code);
+      _confirmController
+        ..stop()
+        ..reset()
+        ..forward();
+    }
+  }
+
+  void _cancelCandidate() {
+    if (_candidateCode == null) return;
+    _confirmController.stop();
+    _confirmController.reset();
+    setState(() => _candidateCode = null);
+  }
+
+  void _confirmScan() {
+    final code = _candidateCode;
+    if (code == null) return;
     Navigator.of(context).pop();
     widget.onDetected(code);
   }
@@ -76,6 +105,7 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
           MobileScanner(
             controller: _controller,
             fit: BoxFit.cover,
+            scanWindow: scanWindow,
             errorBuilder: (context, error, child) => Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -176,25 +206,52 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
             ),
           ),
 
-          // Alt açıklama metni
+          // Alt açıklama metni / onay bekleme göstergesi
           Positioned(
             bottom: 48,
             left: 0,
             right: 0,
             child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'Barkodu çerçeve içine yerleştirin',
-                  style: TextStyle(color: Colors.white, fontSize: 14),
-                ),
+              child: AnimatedBuilder(
+                animation: _confirmController,
+                builder: (context, child) {
+                  final candidate = _candidateCode;
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: candidate == null
+                        ? const Text(
+                            'Barkodu çerçeve içine yerleştirin',
+                            style: TextStyle(color: Colors.white, fontSize: 14),
+                          )
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  value: _confirmController.value,
+                                  strokeWidth: 2,
+                                  color: AppTheme.primaryAccent,
+                                  backgroundColor: Colors.white24,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                'Taranıyor: $candidate',
+                                style: const TextStyle(color: Colors.white, fontSize: 14),
+                              ),
+                            ],
+                          ),
+                  );
+                },
               ),
             ),
           ),

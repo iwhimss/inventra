@@ -6,8 +6,9 @@
 
 ## Özellikler
 
-- **Stok Yönetimi** — Ürün ekleme, düzenleme, kategori ve birim desteği
-- **POS Ekranı** — Hızlı satış, sepet, barkod okuma desteği
+- **Stok Yönetimi** — Ürün ekleme, düzenleme, kategori ve birim desteği, ondalık miktar/stok takibi
+- **Çoklu Barkod** — Bir ürüne birden fazla barkod (alias) tanımlama; tedarikçi barkodu değişse de ürün kaybolmaz
+- **POS Ekranı** — Hızlı satış, sepet, barkod okuma desteği, fiyat teklifi PDF'i
 - **Müşteri & Tedarikçi** — Cari hesap takibi
 - **Kasa Yönetimi** — Açılış/kapanış, günlük rapor
 - **Raporlar & Analitik** — Satış grafikleri, stok özeti

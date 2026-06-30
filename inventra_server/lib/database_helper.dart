@@ -439,6 +439,22 @@ class ServerDatabaseHelper {
       if (!colNames.contains('user_name'))
         _db.execute("ALTER TABLE activity_logs ADD COLUMN user_name TEXT DEFAULT ''");
     } catch (_) {}
+
+    // Migration 12: Çoklu barkod (alias barkod) sistemi — product_barcodes tablosu
+    try {
+      _db.execute('''
+        CREATE TABLE IF NOT EXISTS product_barcodes (
+          id TEXT PRIMARY KEY,
+          product_id TEXT NOT NULL,
+          barcode TEXT NOT NULL,
+          created_at TEXT,
+          FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+        )
+      ''');
+      _db.execute('CREATE INDEX IF NOT EXISTS idx_product_barcodes_barcode ON product_barcodes(barcode)');
+      _db.execute('CREATE INDEX IF NOT EXISTS idx_product_barcodes_product_id ON product_barcodes(product_id)');
+      _db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_product_barcodes_unique ON product_barcodes(barcode, product_id)');
+    } catch (_) {}
   }
 
   // ─── Convenience Query Methods ──────────────────────────────

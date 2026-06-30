@@ -3,6 +3,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:inventra_app/features/pos/models/pos_models.dart';
+import 'package:inventra_app/core/utils/format_utils.dart';
 
 class ReceiptPrinterService {
   static Future<void> printReceipt({
@@ -70,7 +71,7 @@ class ReceiptPrinterService {
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
                       pw.Expanded(flex: 3, child: pw.Text(item.productName, style: pw.TextStyle(font: pFont, fontSize: 10))),
-                      pw.Expanded(flex: 1, child: pw.Text('${item.quantity}', style: pw.TextStyle(font: pFont, fontSize: 10), textAlign: pw.TextAlign.center)),
+                      pw.Expanded(flex: 1, child: pw.Text(formatQty(item.quantity), style: pw.TextStyle(font: pFont, fontSize: 10), textAlign: pw.TextAlign.center)),
                       pw.Expanded(flex: 2, child: pw.Text('${item.lineTotal.toStringAsFixed(2)} TL', style: pw.TextStyle(font: pFont, fontSize: 10), textAlign: pw.TextAlign.right)),
                     ],
                   ),

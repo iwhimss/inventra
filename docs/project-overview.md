@@ -115,11 +115,12 @@ Her gelen istek şu zincirden geçer:
 
 ---
 
-## Server Veritabanı Şeması (17 Tablo)
+## Server Veritabanı Şeması (18 Tablo)
 
 | Tablo | Amaç | Önemli Sütunlar |
 |---|---|---|
-| `products` | Ürün kataloğu | barcode, name, sale_price, purchase_price, sale_price_2, sale_price_3, stock, critical_stock_level, vat_rate, unit, product_group, is_fast_product, image_path |
+| `products` | Ürün kataloğu (ana barkod) | barcode, name, sale_price, purchase_price, sale_price_2, sale_price_3, stock, critical_stock_level, vat_rate, unit, product_group, is_fast_product, image_path |
+| `product_barcodes` | Çoklu barkod havuzu (alias) — bir ürünün ana barkodu dışındaki ek barkodları | product_id (FK), barcode, created_at |
 | `product_groups` | Ürün kategorileri | name, color |
 | `sales` | Satış başlıkları | total_amount, paid_amount, payment_method, cash_amount, card_amount, cashier_id, discount |
 | `sale_items` | Satış kalemleri | sale_id, product_id, quantity, unit_price, discount, total_price |
@@ -137,7 +138,7 @@ Her gelen istek şu zincirden geçer:
 | `label_templates` | Etiket şablonları | name, config (JSON — etiket tasarım verisi) |
 | `events` | Değişiklik olayları | type, table_name, record_id, data, device_id (delta sync için) |
 
-**Migration sistemi** mevcut: 11 migration adımı, `PRAGMA table_info` ile sütun varlığı kontrol edilerek çalışır (destructive değil, additive).
+**Migration sistemi** mevcut: 12 migration adımı, `PRAGMA table_info` ile sütun varlığı kontrol edilerek çalışır (destructive değil, additive).
 
 ---
 
@@ -163,6 +164,11 @@ Her gelen istek şu zincirden geçer:
 | PUT/DELETE | `/api/products/<id>` | Ürün güncelle / sil |
 | POST | `/api/products/<id>/image` | Görsel yükle (base64) |
 | DELETE | `/api/products/<id>/image` | Görsel sil |
+| GET | `/api/products/by-barcode/<barcode>` | Ana veya alias barkoddan ürün ara |
+| GET | `/api/products/<id>/barcodes` | Ürünün alias barkod havuzunu listele |
+| POST | `/api/products/<id>/barcodes` | Ürüne alias barkod ekle (çakışmada `conflict:true` döner) |
+| DELETE | `/api/products/<id>/barcodes/<barcodeId>` | Alias barkod sil |
+| GET | `/api/product-barcodes` | Tüm alias barkodları toplu çek (client-side önbellekleme) |
 | POST | `/api/products/bulk-import` | Toplu ürün aktarımı |
 | POST | `/api/products/stock` | Toplu stok güncelleme |
 | POST | `/api/products/bulk-price` | Toplu fiyat güncelleme |

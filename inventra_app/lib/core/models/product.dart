@@ -2,7 +2,7 @@ class Product {
   final String id;
   final String barcode;
   final String name;
-  final int stock;
+  final double stock;
   final double purchasePrice;
   final double salePrice;
   final double? salePrice2;
@@ -61,7 +61,7 @@ class Product {
       id: map['id'],
       barcode: map['barcode'],
       name: map['name'],
-      stock: map['stock'],
+      stock: (map['stock'] as num).toDouble(),
       purchasePrice: map['purchase_price'],
       salePrice: map['sale_price'],
       salePrice2: map['sale_price_2'] != null ? (map['sale_price_2'] as num).toDouble() : null,

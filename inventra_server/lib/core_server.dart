@@ -94,6 +94,14 @@ class CoreServer {
     _router.delete('/api/products/<id>/image', _handleDeleteProductImage);
     _router.post('/api/products/<id>/image', _handleUploadProductImage);
 
+    // ─── Çoklu Barkod (Alias Barkod) ──────────────────────────
+    _router.get('/api/products/by-barcode/<barcode>', _handleGetProductByBarcode);
+    _router.get('/api/products/<id>/barcodes', _handleGetProductBarcodes);
+    _router.post('/api/products/<id>/barcodes', _handleAddProductBarcode);
+    _router.delete('/api/products/<id>/barcodes/<barcodeId>', _handleDeleteProductBarcode);
+    // Tüm alias barkodları tek seferde çekmek için (client-side toplu eşleştirme/önbellekleme)
+    _router.get('/api/product-barcodes', _handleGetTable('product_barcodes'));
+
     // Serve static images
     _router.get('/images/<filename>', _handleServeImage);
 
@@ -384,6 +392,97 @@ class CoreServer {
     }
   }
 
+  // ─── Çoklu Barkod (Alias Barkod) ───────────────────────────
+
+  /// Ana barkod (products.barcode) veya barkod havuzunda (product_barcodes)
+  /// aranır. Nadir durumda bir barkod birden fazla ürüne bağlı olabilir —
+  /// bu yüzden eşleşen TÜM ürünler döner; client tek eşleşme varsa direkt
+  /// kullanır, birden fazlaysa seçim ekranı gösterir.
+  Response _handleGetProductByBarcode(Request request, String barcode) {
+    try {
+      final rows = _db.query('''
+        SELECT DISTINCT p.* FROM products p
+        LEFT JOIN product_barcodes pb ON pb.product_id = p.id
+        WHERE p.barcode = ?1 OR pb.barcode = ?1
+      ''', [barcode]);
+      return _jsonOk({'success': true, 'data': rows});
+    } catch (e) {
+      return _jsonError(e.toString());
+    }
+  }
+
+  Response _handleGetProductBarcodes(Request request, String id) {
+    try {
+      final rows = _db.query(
+          'SELECT id, barcode, created_at FROM product_barcodes WHERE product_id = ? ORDER BY created_at ASC',
+          [id]);
+      return _jsonOk({'success': true, 'data': rows});
+    } catch (e) {
+      return _jsonError(e.toString());
+    }
+  }
+
+  Future<Response> _handleAddProductBarcode(Request request, String id) async {
+    try {
+      final body = await _readBody(request);
+      final barcode = (body['barcode'] ?? '').toString().trim();
+      final resolve = body['resolve']?.toString(); // null | 'move' | 'share'
+      if (barcode.isEmpty) return _jsonError('Barkod boş olamaz.', code: 400);
+
+      final ownProduct = _db.query('SELECT id, name FROM products WHERE id = ?', [id]);
+      if (ownProduct.isEmpty) return _jsonError('Ürün bulunamadı.', code: 404);
+
+      // Bu ürünün kendi ana barkoduyla çakışma kontrolü
+      final samePrimary = _db.query('SELECT id, name FROM products WHERE barcode = ? AND id != ?', [barcode, id]);
+      // Havuzda başka bir ürüne bağlı mı?
+      final pooled = _db.query('''
+        SELECT p.id, p.name FROM product_barcodes pb
+        JOIN products p ON p.id = pb.product_id
+        WHERE pb.barcode = ? AND pb.product_id != ?
+      ''', [barcode, id]);
+
+      final conflict = [...samePrimary, ...pooled];
+      if (conflict.isNotEmpty && resolve == null) {
+        return _jsonOk({
+          'success': false,
+          'conflict': true,
+          'existing_product': {'id': conflict.first['id'], 'name': conflict.first['name']},
+        });
+      }
+
+      if (conflict.isNotEmpty && resolve == 'move') {
+        _db.delete('product_barcodes', where: 'barcode = ? AND product_id != ?', whereArgs: [barcode, id]);
+        // Eğer çakışan ürünün ANA barkoduysa, onu temizleyemeyiz (zorunlu alan) — sadece havuzdaki linkleri taşıyoruz.
+      }
+      // resolve == 'share' ise hiçbir şey silinmez, barkod bu ürüne de eklenir.
+
+      try {
+        _db.insert('product_barcodes', {
+          'id': const Uuid().v4(),
+          'product_id': id,
+          'barcode': barcode,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+      } catch (_) {
+        // UNIQUE(barcode, product_id) ihlali — zaten ekli, sorun değil.
+      }
+
+      _logActivity('Ürünler', 'Barkod Ekleme', '${ownProduct.first['name']} için "$barcode" barkodu eklendi.', userName: _getUserName(request));
+      return _jsonOk({'success': true});
+    } catch (e) {
+      return _jsonError(e.toString());
+    }
+  }
+
+  Response _handleDeleteProductBarcode(Request request, String id, String barcodeId) {
+    try {
+      final count = _db.delete('product_barcodes', where: 'id = ? AND product_id = ?', whereArgs: [barcodeId, id]);
+      return _jsonOk({'success': true, 'deleted': count});
+    } catch (e) {
+      return _jsonError(e.toString());
+    }
+  }
+
   // ─── Health ─────────────────────────────────────────────────
 
   Response _handleHealth(Request request) {
@@ -443,7 +542,7 @@ class CoreServer {
     }
   }
 
-  void _logStock(String productId, String productName, int oldStock, int newStock, String reason) {
+  void _logStock(String productId, String productName, num oldStock, num newStock, String reason) {
     final diff = newStock - oldStock;
     if (diff == 0) return;
     try {
@@ -703,7 +802,7 @@ class CoreServer {
 
       _logActivity('Ürünler', 'Oluşturma', '${body['name']} eklendi.', userName: _getUserName(request));
       if ((body['stock'] ?? 0) > 0) {
-        _logStock(id, body['name'] ?? '', 0, body['stock'] as int, 'Ürün oluşturma stoğu');
+        _logStock(id, body['name'] ?? '', 0, (body['stock'] as num), 'Ürün oluşturma stoğu');
       }
 
       return _jsonOk({'success': true, 'id': id});
@@ -723,19 +822,19 @@ class CoreServer {
 
       // Get current stock to log difference
       final existing = _db.query('SELECT name, stock FROM products WHERE id = ?', [id]);
-      int oldStock = 0;
+      double oldStock = 0;
       String pName = body['name'] ?? 'Ürün';
       if (existing.isNotEmpty) {
-        oldStock = existing.first['stock'] as int? ?? 0;
+        oldStock = (existing.first['stock'] as num?)?.toDouble() ?? 0;
         pName = existing.first['name']?.toString() ?? pName;
       }
 
       final count = _db.update('products', body, where: 'id = ?', whereArgs: [id]);
-      
+
       if (count > 0) {
         _logActivity('Ürünler', 'Güncelleme', '$pName güncellendi.', userName: _getUserName(request));
         if (body.containsKey('stock')) {
-           int newStock = int.tryParse(body['stock'].toString()) ?? oldStock;
+           double newStock = double.tryParse(body['stock'].toString()) ?? oldStock;
            if (newStock != oldStock) {
              _logStock(id, pName, oldStock, newStock, 'Manuel stok güncelleme');
            }
@@ -844,21 +943,21 @@ class CoreServer {
 
       for (var item in items) {
         final productId = item['product_id'] as String?;
-        final quantity = item['quantity'] ?? 0;
+        final quantity = (item['quantity'] as num?)?.toDouble() ?? 0;
         final action = item['action'] ?? 'add';
         if (productId == null) continue;
 
         // Fetch name and current stock for log
         final existing = _db.query('SELECT name, stock FROM products WHERE id = ?', [productId]);
         String pName = existing.isNotEmpty ? existing.first['name']?.toString() ?? 'Ürün' : 'Ürün';
-        int currentStock = existing.isNotEmpty ? (existing.first['stock'] as int? ?? 0) : 0;
+        double currentStock = existing.isNotEmpty ? ((existing.first['stock'] as num?)?.toDouble() ?? 0) : 0;
 
         if (action == 'add') {
           _db.execute('UPDATE products SET stock = stock + ?, updated_at = ? WHERE id = ?',
             [quantity, DateTime.now().toIso8601String(), productId]);
-          _logStock(productId, pName, currentStock, currentStock + (quantity as int), 'Toplu stok girişi');
+          _logStock(productId, pName, currentStock, currentStock + quantity, 'Toplu stok girişi');
         } else {
-          final newStock = (currentStock - (quantity as int)).clamp(0, currentStock);
+          final newStock = (currentStock - quantity).clamp(0, currentStock);
           _db.execute('UPDATE products SET stock = MAX(0, stock - ?), updated_at = ? WHERE id = ?',
             [quantity, DateTime.now().toIso8601String(), productId]);
           _logStock(productId, pName, currentStock, newStock, 'Toplu stok düşüşü');
@@ -1618,6 +1717,15 @@ class CoreServer {
         final barcode = map['barcode']?.toString();
         if (barcode == null || barcode.isEmpty) continue;
 
+        // Alternatif (alias) barkodlar — virgülle ayrılmış, ürün kolonu değil, ayrıca işlenir
+        final aliasBarcodesRaw = map.remove('alias_barcodes')?.toString() ?? '';
+        final aliasBarcodes = aliasBarcodesRaw
+            .split(',')
+            .map((b) => b.trim())
+            .where((b) => b.isNotEmpty && b != barcode)
+            .toSet()
+            .toList();
+
         // Geçersiz sütunları filtrele (INSERT ve UPDATE için ortak)
         final validCols = {'id', 'barcode', 'name', 'stock', 'purchase_price', 'sale_price', 'sale_price_2', 'sale_price_3', 'vat_rate', 'unit', 'product_group', 'is_fast_product', 'keywords', 'image_path', 'created_at', 'updated_at'};
         map.removeWhere((key, _) => !validCols.contains(key));
@@ -1626,8 +1734,10 @@ class CoreServer {
 
         // Check existing
         final existing = _db.query('SELECT id FROM products WHERE barcode = ?', [barcode]);
+        String productId;
         if (existing.isNotEmpty) {
           // Update
+          productId = existing.first['id'].toString();
           map.remove('id');
           map['updated_at'] = DateTime.now().toIso8601String();
           _db.update('products', map, where: 'barcode = ?', whereArgs: [barcode]);
@@ -1637,10 +1747,23 @@ class CoreServer {
           if (!map.containsKey('id') || map['id'] == null) {
             map['id'] = 'prod_${DateTime.now().millisecondsSinceEpoch}_$addedCount';
           }
+          productId = map['id'].toString();
           map['created_at'] ??= DateTime.now().toIso8601String();
           map['updated_at'] ??= DateTime.now().toIso8601String();
           _db.insert('products', map);
           addedCount++;
+        }
+
+        // Alias barkodları havuza ekle (zaten varsa UNIQUE index sessizce engeller)
+        for (final alias in aliasBarcodes) {
+          try {
+            _db.insert('product_barcodes', {
+              'id': const Uuid().v4(),
+              'product_id': productId,
+              'barcode': alias,
+              'created_at': DateTime.now().toIso8601String(),
+            });
+          } catch (_) {}
         }
 
         // Handle product group
@@ -2154,12 +2277,20 @@ class CoreServer {
 
   // ─── Version ──────────────────────────────────────────────
   Response _handleGetVersion(Request request) {
+    String? minAppVersion;
+    try {
+      final rows = _db.query("SELECT value FROM settings WHERE key = 'min_app_version'");
+      if (rows.isNotEmpty) {
+        final v = rows.first['value']?.toString() ?? '';
+        if (v.isNotEmpty) minAppVersion = v;
+      }
+    } catch (_) {}
+
     return _jsonOk({
       'success': true,
       'data': {
-        'server_version': '0.0.1',
         'api_version': apiVersion,
-        'min_app_version': '0.0.1',
+        'min_app_version': minAppVersion,
       }
     });
   }
