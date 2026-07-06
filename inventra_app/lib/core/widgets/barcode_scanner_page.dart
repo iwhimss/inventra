@@ -32,7 +32,7 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
   // belirli bir süre tazelenmezse otomatik iptal ediyoruz.
   DateTime? _lastSeenAt;
   Timer? _watchdog;
-  static const _watchdogStaleness = Duration(milliseconds: 250);
+  static const _watchdogStaleness = Duration(milliseconds: 600);
 
   @override
   void initState() {
@@ -47,7 +47,7 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
     );
     _confirmController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 700),
     )..addStatusListener((status) {
         if (status == AnimationStatus.completed) _confirmScan();
       });

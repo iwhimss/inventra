@@ -72,6 +72,32 @@ class SoundService {
         }
       }
     } catch (_) {}
+    await _warmUpPlayers();
+  }
+
+  /// Her kategori için sesi sessizce (volume 0) bir kez çalıp hemen durdurur.
+  /// Native ses motorunun (Android'de ExoPlayer/MediaPlayer, iOS'ta
+  /// AVAudioPlayer) ilk çalmadaki "soğuk başlangıç" gecikmesini/başarısız
+  /// olma riskini ortadan kaldırır — gerçek ilk kullanıcı etkileşiminde ses
+  /// anında ve güvenilir çalar.
+  static Future<void> _warmUpPlayers() async {
+    const assets = {
+      SoundCategory.success: 'sounds/success.wav',
+      SoundCategory.error: 'sounds/error.wav',
+      SoundCategory.warning: 'sounds/notification.wav',
+      SoundCategory.notification: 'sounds/notification.wav',
+      SoundCategory.info: 'sounds/success.wav',
+      SoundCategory.login: 'sounds/login.wav',
+      SoundCategory.cartAdd: 'sounds/cart_add.wav',
+    };
+    for (final entry in assets.entries) {
+      try {
+        final player = _getPlayer(entry.key);
+        await player.setVolume(0);
+        await player.play(AssetSource(entry.value));
+        await player.stop();
+      } catch (_) {}
+    }
   }
 
   static Future<void> _play(SoundCategory category, String asset, bool enabled, double volume) async {
