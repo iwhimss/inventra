@@ -1,4 +1,4 @@
-﻿import 'package:audioplayers/audioplayers.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:inventra_app/core/database/database_helper.dart';
 
 /// Sound categories for the application.
@@ -15,7 +15,27 @@ enum SoundCategory {
 class SoundService {
   // Separate players per category to avoid sound overlap
   static final Map<SoundCategory, AudioPlayer> _players = {};
-  
+
+  // Kategori başına sabit asset — tek doğruluk kaynağı. Kaynak yalnızca bir
+  // kez yüklenir (setSourceAsset), tetikleme yalnızca resume() ile yapılır.
+  // Her tetiklemede play(AssetSource(...)) çağırmak (önceki tasarım), her
+  // seferinde kaynağı yeniden yükletir — audioplayers paketinin kendi
+  // dokümantasyonu bunun yanlış kullanım deseni olduğunu belirtiyor. Bu
+  // yanlış kullanım, PlayerMode.lowLatency (Android'de SoundPool) ile
+  // birleşince SoundPool'un sınırlı slot sayısını hızla tüketip birkaç
+  // çağrı sonra TÜM sesleri kalıcı olarak sessizleştiriyordu (yalnızca
+  // uygulamanın tamamen yeniden başlatılmasıyla düzeliyordu).
+  static const _assetPaths = {
+    SoundCategory.success: 'sounds/success.wav',
+    SoundCategory.error: 'sounds/error.wav',
+    SoundCategory.warning: 'sounds/notification.wav',
+    SoundCategory.notification: 'sounds/notification.wav',
+    SoundCategory.info: 'sounds/success.wav',
+    SoundCategory.login: 'sounds/login.wav',
+    SoundCategory.cartAdd: 'sounds/cart_add.wav',
+  };
+  static final Set<SoundCategory> _loaded = {};
+
   // Per-sound enable flags (loaded from DB)
   static bool successEnabled = true;
   static bool errorEnabled = true;
@@ -23,7 +43,7 @@ class SoundService {
   static bool notificationEnabled = true;
   static bool infoEnabled = true;
   static bool cartAddEnabled = true;
-  
+
   // Volume (0.0 to 1.0)
   static double masterVolume = 1.0;
   static double successVolume = 1.0;
@@ -39,19 +59,31 @@ class SoundService {
   // ekleme sesini sessizce yutuyordu).
   static final Map<SoundCategory, DateTime> _lastPlayTimes = {};
 
-  static AudioPlayer _getPlayer(SoundCategory category) {
-    return _players.putIfAbsent(category, () {
-      final player = AudioPlayer();
-      player.setReleaseMode(ReleaseMode.stop);
+  /// Oyuncuyu döndürür; yoksa oluşturup moda ayarlar, kaynağı yüklenmemişse
+  /// bir kez yükler. Hem açılış ısıtmasında hem her gerçek çalma isteğinde
+  /// çağrılır — böylece bir önceki oyuncu bozulup atıldıysa (bkz. _play),
+  /// bir sonraki çağrı sıfırdan ve doğru şekilde kurulur.
+  static Future<AudioPlayer> _getPlayer(SoundCategory category) async {
+    var player = _players[category];
+    if (player == null) {
+      player = AudioPlayer();
+      await player.setReleaseMode(ReleaseMode.stop);
       // Kısa UI bildirim sesleri için: Android'de SoundPool kullanır (önceden
       // belleğe yüklenir, tetiklemede neredeyse gecikmesizdir, üst üste binen
-      // çağrıları doğal destekler) — MediaPlayer'ın kısa sesler için yarattığı
-      // "soğuk başlangıç" gecikmesi/başarısızlık riskini ortadan kaldırır.
-      player.setPlayerMode(PlayerMode.lowLatency);
-      return player;
-    });
+      // çağrıları doğal destekler).
+      await player.setPlayerMode(PlayerMode.lowLatency);
+      _players[category] = player;
+      _loaded.remove(category); // yeni oyuncu — kaynak henüz yüklenmedi
+    }
+    if (!_loaded.contains(category)) {
+      try {
+        await player.setSourceAsset(_assetPaths[category]!);
+        _loaded.add(category);
+      } catch (_) {}
+    }
+    return player;
   }
-  
+
   /// Load sound preferences from settings DB
   static Future<void> init() async {
     try {
@@ -80,74 +112,66 @@ class SoundService {
     await _warmUpPlayers();
   }
 
-  /// Her kategori için sesi sessizce (volume 0) bir kez çalıp hemen durdurur.
-  /// Native ses motorunun (Android'de ExoPlayer/MediaPlayer, iOS'ta
-  /// AVAudioPlayer) ilk çalmadaki "soğuk başlangıç" gecikmesini/başarısız
-  /// olma riskini ortadan kaldırır — gerçek ilk kullanıcı etkileşiminde ses
-  /// anında ve güvenilir çalar.
+  /// Her kategori için oyuncuyu oluşturup kaynağını önceden yükler
+  /// (gerçek ilk kullanıcı etkileşiminde ses anında ve güvenilir çalar).
   static Future<void> _warmUpPlayers() async {
-    const assets = {
-      SoundCategory.success: 'sounds/success.wav',
-      SoundCategory.error: 'sounds/error.wav',
-      SoundCategory.warning: 'sounds/notification.wav',
-      SoundCategory.notification: 'sounds/notification.wav',
-      SoundCategory.info: 'sounds/success.wav',
-      SoundCategory.login: 'sounds/login.wav',
-      SoundCategory.cartAdd: 'sounds/cart_add.wav',
-    };
-    for (final entry in assets.entries) {
+    for (final category in _assetPaths.keys) {
       try {
-        final player = _getPlayer(entry.key);
-        await player.setVolume(0);
-        await player.play(AssetSource(entry.value));
-        await player.stop();
+        await _getPlayer(category);
       } catch (_) {}
     }
   }
 
-  static Future<void> _play(SoundCategory category, String asset, bool enabled, double volume) async {
+  static Future<void> _play(SoundCategory category, bool enabled, double volume) async {
     if (!enabled) return;
-    
+
     final now = DateTime.now();
     final lastForCategory = _lastPlayTimes[category];
     if (lastForCategory != null && now.difference(lastForCategory) < const Duration(milliseconds: 100)) return;
     _lastPlayTimes[category] = now;
 
     try {
-      final player = _getPlayer(category);
+      final player = await _getPlayer(category);
       await player.setVolume(masterVolume * volume);
-      await player.play(AssetSource(asset));
-    } catch (_) {}
+      await player.resume();
+    } catch (_) {
+      // Kendi kendini onarma: native oyuncu bozulmuş olabilir — at, bir
+      // sonraki çağrıda sıfırdan kurulup kaynağı yeniden yüklensin. Artık
+      // tam uygulama yeniden başlatmaya gerek kalmıyor.
+      final broken = _players.remove(category);
+      _loaded.remove(category);
+      await broken?.dispose();
+    }
   }
 
   static Future<void> playSuccess() async {
-    await _play(SoundCategory.success, 'sounds/success.wav', successEnabled, successVolume);
+    await _play(SoundCategory.success, successEnabled, successVolume);
   }
 
   static Future<void> playError() async {
-    await _play(SoundCategory.error, 'sounds/error.wav', errorEnabled, errorVolume);
+    await _play(SoundCategory.error, errorEnabled, errorVolume);
   }
 
   static Future<void> playWarning() async {
     // Uses notification sound as warning — can be replaced with warning.wav later
-    await _play(SoundCategory.warning, 'sounds/notification.wav', warningEnabled, warningVolume);
+    await _play(SoundCategory.warning, warningEnabled, warningVolume);
   }
 
   static Future<void> playNotification() async {
-    await _play(SoundCategory.notification, 'sounds/notification.wav', notificationEnabled, notificationVolume);
+    await _play(SoundCategory.notification, notificationEnabled, notificationVolume);
   }
 
   static Future<void> playInfo() async {
     // Uses success sound as info — can be replaced with info.wav later
-    await _play(SoundCategory.info, 'sounds/success.wav', infoEnabled, infoVolume);
+    await _play(SoundCategory.info, infoEnabled, infoVolume);
   }
 
   static Future<void> playLogin() async {
-    await _play(SoundCategory.login, 'sounds/login.wav', successEnabled, successVolume);
+    await _play(SoundCategory.login, successEnabled, successVolume);
   }
 
   static Future<void> playCartAdd() async {
-    await _play(SoundCategory.cartAdd, 'sounds/cart_add.wav', cartAddEnabled, cartAddVolume);
+    await _play(SoundCategory.cartAdd, cartAddEnabled, cartAddVolume);
   }
 
   /// Dispose all players
@@ -156,5 +180,6 @@ class SoundService {
       player.dispose();
     }
     _players.clear();
+    _loaded.clear();
   }
 }

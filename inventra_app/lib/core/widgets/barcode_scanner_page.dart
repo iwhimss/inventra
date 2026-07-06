@@ -20,27 +20,16 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
   late final AnimationController _scanLineController;
   late final Animation<double> _scanLineAnim;
 
-  // Onay bekleme: bir barkod algılanınca hemen kabul edilmez, aynı barkod
-  // kesintisiz algılanmaya devam ederse kabul edilir.
-  late final AnimationController _confirmController;
-  String? _candidateCode;
-
-  // Bekçi zamanlayıcı: mobile_scanner, barkod artık görünmediğinde onDetect'i
-  // her zaman boş listeyle çağırmayabilir (bazı platformlarda hiç çağırmaz).
-  // Bu yüzden iptal kararını yalnızca gelen callback'lere bağlı bırakmıyoruz —
-  // adayın en son ne zaman GERÇEKTEN görüldüğünü bağımsız olarak takip edip,
-  // belirli bir süre tazelenmezse otomatik iptal ediyoruz.
-  //
-  // Eşik SABİT değil — kameranın o anki gerçek algılama ritmine göre canlı
-  // hesaplanır (son birkaç algılama arası boşluğun ortalamasının 3 katı).
-  // Sabit bir milisaniye değeri cihazdan cihaza değişen kamera/analiz hızına
-  // göre ya çok sıkı (yanlış-pozitif iptal) ya da onay süresine çok yakın
-  // (gerçek kaldırmayı yakalayamama) oluyordu.
-  DateTime? _lastSeenAt;
-  Timer? _watchdog;
-  final List<int> _recentGapsMs = [];
-  static const _minThreshold = Duration(milliseconds: 250);
-  static const _maxThreshold = Duration(milliseconds: 500); // 700ms onaydan her zaman güvenli marj
+  // Zamanlama tabanlı onay/iptal mekanizması (üç tur denendi: sabit süre,
+  // adaptif süre) gerçek dünyada güvenilir çalışmadı — cihazdan cihaza
+  // değişen kamera/analiz hızına karşı hiçbir sabit ya da uyarlanabilir eşik
+  // tutarlı sonuç vermedi. Bunun yerine: kamera açılınca kısa bir "hazır
+  // değil" penceresi (yanlışlıkla konumlandırma anında taramayı önler),
+  // ardından ilk başarılı okumada ANINDA kabul. Yanlış okuma riski
+  // zamanlama yerine çerçeve boyutuyla (aşağıda) yönetiliyor.
+  bool _readyToScan = false;
+  bool _handled = false;
+  Timer? _startupGraceTimer;
 
   @override
   void initState() {
@@ -53,80 +42,26 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
       parent: _scanLineController,
       curve: Curves.easeInOut,
     );
-    _confirmController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    )..addStatusListener((status) {
-        if (status == AnimationStatus.completed) _confirmScan();
-      });
+    _startupGraceTimer = Timer(const Duration(milliseconds: 500), () {
+      if (mounted) setState(() => _readyToScan = true);
+    });
   }
 
   @override
   void dispose() {
     _scanLineController.dispose();
-    _confirmController.dispose();
-    _watchdog?.cancel();
+    _startupGraceTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
   void _onDetect(BarcodeCapture capture) {
-    if (capture.barcodes.isEmpty) {
-      _cancelCandidate();
-      return;
-    }
+    if (!_readyToScan || _handled) return;
+    if (capture.barcodes.isEmpty) return;
     final code = capture.barcodes.first.rawValue;
-    if (code == null || code.isEmpty) {
-      _cancelCandidate();
-      return;
-    }
+    if (code == null || code.isEmpty) return;
 
-    final now = DateTime.now();
-    if (_lastSeenAt != null) {
-      _recentGapsMs.add(now.difference(_lastSeenAt!).inMilliseconds);
-      if (_recentGapsMs.length > 5) _recentGapsMs.removeAt(0);
-    }
-    _lastSeenAt = now;
-    _watchdog ??= Timer.periodic(const Duration(milliseconds: 100), (_) => _checkWatchdog());
-
-    if (_candidateCode != code) {
-      setState(() => _candidateCode = code);
-      _confirmController
-        ..stop()
-        ..reset()
-        ..forward();
-      _recentGapsMs.clear(); // yeni aday için geçmiş ritim verisi geçersiz
-    }
-  }
-
-  void _checkWatchdog() {
-    if (_candidateCode == null || _lastSeenAt == null) return;
-    final avgGapMs = _recentGapsMs.isEmpty
-        ? 150 // henüz veri yoksa makul bir varsayılan
-        : _recentGapsMs.reduce((a, b) => a + b) ~/ _recentGapsMs.length;
-    final thresholdMs = (avgGapMs * 3).clamp(
-      _minThreshold.inMilliseconds,
-      _maxThreshold.inMilliseconds,
-    );
-    if (DateTime.now().difference(_lastSeenAt!) > Duration(milliseconds: thresholdMs)) {
-      _cancelCandidate();
-    }
-  }
-
-  void _cancelCandidate() {
-    if (_candidateCode == null) return;
-    _confirmController.stop();
-    _confirmController.reset();
-    _watchdog?.cancel();
-    _watchdog = null;
-    _lastSeenAt = null;
-    _recentGapsMs.clear();
-    setState(() => _candidateCode = null);
-  }
-
-  void _confirmScan() {
-    final code = _candidateCode;
-    if (code == null) return;
+    _handled = true; // Navigator.pop() tamamlanana kadar tekrar tetiklenmeyi önler
     Navigator.of(context).pop();
     widget.onDetected(code);
   }
@@ -135,9 +70,11 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
 
-    // Tarama penceresi: ekran ortasında %65 genişlik × %28 yükseklik
-    final frameW = size.width * 0.65;
-    final frameH = size.height * 0.28;
+    // Tarama penceresi: ekran ortasında %60 genişlik × %25 yükseklik
+    // (hafifçe daraltılmış — yanlışlıkla komşu barkodun çerçeveye girme
+    // ihtimalini azaltır, ölçülü bir daraltma, aşırı küçük değil)
+    final frameW = size.width * 0.60;
+    final frameH = size.height * 0.25;
     final frameLeft = (size.width - frameW) / 2;
     final frameTop = (size.height - frameH) / 2 - 20;
     final scanWindow = Rect.fromLTWH(frameLeft, frameTop, frameW, frameH);
@@ -251,52 +188,25 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
             ),
           ),
 
-          // Alt açıklama metni / onay bekleme göstergesi
+          // Alt açıklama metni
           Positioned(
             bottom: 48,
             left: 0,
             right: 0,
             child: Center(
-              child: AnimatedBuilder(
-                animation: _confirmController,
-                builder: (context, child) {
-                  final candidate = _candidateCode;
-                  return Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: candidate == null
-                        ? const Text(
-                            'Barkodu çerçeve içine yerleştirin',
-                            style: TextStyle(color: Colors.white, fontSize: 14),
-                          )
-                        : Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  value: _confirmController.value,
-                                  strokeWidth: 2,
-                                  color: AppTheme.primaryAccent,
-                                  backgroundColor: Colors.white24,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                'Taranıyor: $candidate',
-                                style: const TextStyle(color: Colors.white, fontSize: 14),
-                              ),
-                            ],
-                          ),
-                  );
-                },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Barkodu çerçeve içine yerleştirin',
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                ),
               ),
             ),
           ),
