@@ -132,6 +132,12 @@ class SoundService {
 
     try {
       final player = await _getPlayer(category);
+      // Android SoundPool (lowLatency mod) için kritik: native streamId, bir
+      // önceki çalma tamamlandıktan sonra da dolu kalır. stop() bu streamId'yi
+      // sıfırlar; aksi halde resume() "duraklatılmış akışı devam ettir"
+      // dalına düşer — akış zaten bittiği için bu hiçbir şey yapmaz ve ilk
+      // çalmadan sonraki TÜM sesler sessizce iptal olur.
+      await player.stop();
       await player.setVolume(masterVolume * volume);
       await player.resume();
     } catch (_) {
