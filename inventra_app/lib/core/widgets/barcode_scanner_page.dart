@@ -21,9 +21,18 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
   late final Animation<double> _scanLineAnim;
 
   // Onay bekleme: bir barkod algılanınca hemen kabul edilmez, aynı barkod
-  // 3 saniye boyunca kesintisiz algılanmaya devam ederse kabul edilir.
+  // kesintisiz algılanmaya devam ederse kabul edilir.
   late final AnimationController _confirmController;
   String? _candidateCode;
+
+  // Bekçi zamanlayıcı: mobile_scanner, barkod artık görünmediğinde onDetect'i
+  // her zaman boş listeyle çağırmayabilir (bazı platformlarda hiç çağırmaz).
+  // Bu yüzden iptal kararını yalnızca gelen callback'lere bağlı bırakmıyoruz —
+  // adayın en son ne zaman GERÇEKTEN görüldüğünü bağımsız olarak takip edip,
+  // belirli bir süre tazelenmezse otomatik iptal ediyoruz.
+  DateTime? _lastSeenAt;
+  Timer? _watchdog;
+  static const _watchdogStaleness = Duration(milliseconds: 250);
 
   @override
   void initState() {
@@ -38,7 +47,7 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
     );
     _confirmController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 500),
     )..addStatusListener((status) {
         if (status == AnimationStatus.completed) _confirmScan();
       });
@@ -48,6 +57,7 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
   void dispose() {
     _scanLineController.dispose();
     _confirmController.dispose();
+    _watchdog?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -63,6 +73,15 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
       return;
     }
 
+    _lastSeenAt = DateTime.now();
+    _watchdog ??= Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (_candidateCode != null &&
+          _lastSeenAt != null &&
+          DateTime.now().difference(_lastSeenAt!) > _watchdogStaleness) {
+        _cancelCandidate();
+      }
+    });
+
     if (_candidateCode != code) {
       setState(() => _candidateCode = code);
       _confirmController
@@ -76,6 +95,9 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
     if (_candidateCode == null) return;
     _confirmController.stop();
     _confirmController.reset();
+    _watchdog?.cancel();
+    _watchdog = null;
+    _lastSeenAt = null;
     setState(() => _candidateCode = null);
   }
 

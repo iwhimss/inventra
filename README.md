@@ -198,7 +198,7 @@ Sunucu çalıştıktan sonra tarayıcıdan `http://<sunucu-ip>:5000/admin` adres
 | **Ürünler** | Stok ve fiyat inline düzenleme, stok seviyesine göre renk kodlaması, arama/filtreleme |
 | **Satışlar** | Satış geçmişi (bugün/hafta/ay/tümü), toplam ciro, ödeme türü |
 | **Loglar** | Aktivite logları (auth/ürün/satış/kasa/sistem tipine göre filtrelenebilir) |
-| **Cihazlar** | Eşleme isteklerini onaylama/reddetme, bağlı cihazlar |
+| **Cihazlar** | Eşleme isteklerini onaylama/reddetme, bağlı cihazlar, cihaz yeniden adlandırma |
 | **Kullanıcılar** | Kullanıcı ekleme/silme |
 | **Ayarlar** | İşletme bilgileri, port/host düzenleme, API key görüntüleme, güncelleme kontrolü (minimum uygulama sürümü), sıfırlama |
 

@@ -965,7 +965,27 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                                     ),
                                   ),
                                   InkWell(
-                                    onTap: () => cartNotifier.removeItem(item.productId),
+                                    onTap: () async {
+                                      final confirm = await showDialog<bool>(
+                                        context: context,
+                                        builder: (ctx) => AlertDialog(
+                                          backgroundColor: AppTheme.panelBackground,
+                                          title: const Text('Ürünü Sil'),
+                                          content: Text('${item.productName} sepetten çıkarılsın mı?'),
+                                          actions: [
+                                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
+                                            ElevatedButton(
+                                              onPressed: () => Navigator.pop(ctx, true),
+                                              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.dangerAccent),
+                                              child: const Text('SİL'),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                      if (confirm == true) {
+                                        cartNotifier.removeItem(item.productId);
+                                      }
+                                    },
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                       decoration: BoxDecoration(

@@ -377,7 +377,7 @@ Sunucu içinde tamamen Dart ile render edilen server-side HTML arayüz. Harici J
 | Sayfa | İşlev |
 |---|---|
 | `/admin/dashboard` | Çalışma süresi, bugünkü ciro, ürün sayısı, bağlı cihaz sayısı, API key, versiyon |
-| `/admin/devices` | Bekleyen eşleme isteklerini onayla/reddet; onaylı cihaz listesi, cihaz kaldırma |
+| `/admin/devices` | Bekleyen eşleme isteklerini onayla/reddet; onaylı cihaz listesi, yeniden adlandırma, cihaz kaldırma |
 | `/admin/users` | Personel ekleme/silme (staff_id, şifre, ad, rol) |
 | `/admin/roles` | Rol tanımlama ve izin yönetimi |
 | `/admin/settings` | İşletme bilgileri, KDV varsayılanı, termal genişlik, güncelleme kontrolü (`min_app_version`) |

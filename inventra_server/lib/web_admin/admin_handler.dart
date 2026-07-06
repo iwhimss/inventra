@@ -33,6 +33,7 @@ class AdminHandler {
     r.get('/admin/devices', _devicesPage);
     r.post('/admin/devices/approve', _approveDevice);
     r.post('/admin/devices/reject', _rejectDevice);
+    r.post('/admin/devices/rename', _renameDevice);
     r.get('/admin/users', _usersPage);
     r.post('/admin/users', _createUser);
     r.post('/admin/users/delete', _deleteUser);
@@ -291,7 +292,13 @@ class AdminHandler {
         : '<table class="data-table"><thead><tr><th>Cihaz</th><th>Tür</th><th>ID</th><th>Tarih</th><th></th></tr></thead><tbody>' +
           approved.map((d) => '''
             <tr>
-              <td>${_esc(d['device_name'])}</td>
+              <td>
+                <form method="POST" action="/admin/devices/rename" style="display:flex;gap:6px;align-items:center">
+                  <input type="hidden" name="device_id" value="${_esc(d['device_id'])}">
+                  <input type="text" name="device_name" value="${_esc(d['device_name'])}"
+                    style="margin:0;font-size:13px;padding:6px 8px;max-width:160px" onchange="this.form.submit()">
+                </form>
+              </td>
               <td>${_esc(d['device_type'])}</td>
               <td class="mono">${_esc(d['device_id']?.toString().substring(0, 8) ?? '')}</td>
               <td>${_esc(d['created_at']?.toString().substring(0, 10) ?? '')}</td>
@@ -334,6 +341,19 @@ class AdminHandler {
     if (deviceId.isNotEmpty) {
       _db.delete('paired_devices', where: 'device_id = ?', whereArgs: [deviceId]);
       print('❌ [Admin Panel] Cihaz reddedildi: $deviceId');
+    }
+    return _redirect('/admin/devices');
+  }
+
+  Future<Response> _renameDevice(Request request) async {
+    if (!_isAuthenticated(request)) return _redirect('/admin/login');
+    final body = await request.readAsString();
+    final params = Uri.splitQueryString(body);
+    final deviceId = params['device_id'] ?? '';
+    final newName = params['device_name']?.trim() ?? '';
+    if (deviceId.isNotEmpty && newName.isNotEmpty) {
+      _db.update('paired_devices', {'device_name': newName}, where: 'device_id = ?', whereArgs: [deviceId]);
+      print('✏️ [Admin Panel] Cihaz yeniden adlandırıldı: $deviceId → $newName');
     }
     return _redirect('/admin/devices');
   }

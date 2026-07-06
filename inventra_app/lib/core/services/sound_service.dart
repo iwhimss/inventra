@@ -33,7 +33,11 @@ class SoundService {
   static double infoVolume = 1.0;
   static double cartAddVolume = 1.0;
 
-  static DateTime? _lastPlayTime;
+  // Kategori bazlı debounce: bir kategorideki ses, başka bir kategorideki
+  // sesin çalınmasını asla bastırmamalı (önceden tek bir paylaşılan
+  // değişken vardı — ör. bir hata sesi, hemen ardından tetiklenen sepete
+  // ekleme sesini sessizce yutuyordu).
+  static final Map<SoundCategory, DateTime> _lastPlayTimes = {};
 
   static AudioPlayer _getPlayer(SoundCategory category) {
     return _players.putIfAbsent(category, () {
@@ -74,8 +78,9 @@ class SoundService {
     if (!enabled) return;
     
     final now = DateTime.now();
-    if (_lastPlayTime != null && now.difference(_lastPlayTime!) < const Duration(milliseconds: 100)) return;
-    _lastPlayTime = now;
+    final lastForCategory = _lastPlayTimes[category];
+    if (lastForCategory != null && now.difference(lastForCategory) < const Duration(milliseconds: 100)) return;
+    _lastPlayTimes[category] = now;
 
     try {
       final player = _getPlayer(category);
