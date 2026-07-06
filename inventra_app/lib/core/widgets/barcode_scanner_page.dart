@@ -30,9 +30,17 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
   // Bu yüzden iptal kararını yalnızca gelen callback'lere bağlı bırakmıyoruz —
   // adayın en son ne zaman GERÇEKTEN görüldüğünü bağımsız olarak takip edip,
   // belirli bir süre tazelenmezse otomatik iptal ediyoruz.
+  //
+  // Eşik SABİT değil — kameranın o anki gerçek algılama ritmine göre canlı
+  // hesaplanır (son birkaç algılama arası boşluğun ortalamasının 3 katı).
+  // Sabit bir milisaniye değeri cihazdan cihaza değişen kamera/analiz hızına
+  // göre ya çok sıkı (yanlış-pozitif iptal) ya da onay süresine çok yakın
+  // (gerçek kaldırmayı yakalayamama) oluyordu.
   DateTime? _lastSeenAt;
   Timer? _watchdog;
-  static const _watchdogStaleness = Duration(milliseconds: 600);
+  final List<int> _recentGapsMs = [];
+  static const _minThreshold = Duration(milliseconds: 250);
+  static const _maxThreshold = Duration(milliseconds: 500); // 700ms onaydan her zaman güvenli marj
 
   @override
   void initState() {
@@ -73,14 +81,13 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
       return;
     }
 
-    _lastSeenAt = DateTime.now();
-    _watchdog ??= Timer.periodic(const Duration(milliseconds: 100), (_) {
-      if (_candidateCode != null &&
-          _lastSeenAt != null &&
-          DateTime.now().difference(_lastSeenAt!) > _watchdogStaleness) {
-        _cancelCandidate();
-      }
-    });
+    final now = DateTime.now();
+    if (_lastSeenAt != null) {
+      _recentGapsMs.add(now.difference(_lastSeenAt!).inMilliseconds);
+      if (_recentGapsMs.length > 5) _recentGapsMs.removeAt(0);
+    }
+    _lastSeenAt = now;
+    _watchdog ??= Timer.periodic(const Duration(milliseconds: 100), (_) => _checkWatchdog());
 
     if (_candidateCode != code) {
       setState(() => _candidateCode = code);
@@ -88,6 +95,21 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
         ..stop()
         ..reset()
         ..forward();
+      _recentGapsMs.clear(); // yeni aday için geçmiş ritim verisi geçersiz
+    }
+  }
+
+  void _checkWatchdog() {
+    if (_candidateCode == null || _lastSeenAt == null) return;
+    final avgGapMs = _recentGapsMs.isEmpty
+        ? 150 // henüz veri yoksa makul bir varsayılan
+        : _recentGapsMs.reduce((a, b) => a + b) ~/ _recentGapsMs.length;
+    final thresholdMs = (avgGapMs * 3).clamp(
+      _minThreshold.inMilliseconds,
+      _maxThreshold.inMilliseconds,
+    );
+    if (DateTime.now().difference(_lastSeenAt!) > Duration(milliseconds: thresholdMs)) {
+      _cancelCandidate();
     }
   }
 
@@ -98,6 +120,7 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage>
     _watchdog?.cancel();
     _watchdog = null;
     _lastSeenAt = null;
+    _recentGapsMs.clear();
     setState(() => _candidateCode = null);
   }
 

@@ -43,6 +43,11 @@ class SoundService {
     return _players.putIfAbsent(category, () {
       final player = AudioPlayer();
       player.setReleaseMode(ReleaseMode.stop);
+      // Kısa UI bildirim sesleri için: Android'de SoundPool kullanır (önceden
+      // belleğe yüklenir, tetiklemede neredeyse gecikmesizdir, üst üste binen
+      // çağrıları doğal destekler) — MediaPlayer'ın kısa sesler için yarattığı
+      // "soğuk başlangıç" gecikmesi/başarısızlık riskini ortadan kaldırır.
+      player.setPlayerMode(PlayerMode.lowLatency);
       return player;
     });
   }
@@ -110,7 +115,6 @@ class SoundService {
 
     try {
       final player = _getPlayer(category);
-      await player.stop(); // Stop any currently playing overlapping sound in same category
       await player.setVolume(masterVolume * volume);
       await player.play(AssetSource(asset));
     } catch (_) {}
