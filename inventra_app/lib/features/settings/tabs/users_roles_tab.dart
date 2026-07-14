@@ -10,6 +10,7 @@ import 'package:inventra_app/core/network/api_client.dart';
 import 'package:inventra_app/core/database/database_helper.dart';
 import 'package:inventra_app/core/services/sound_service.dart';
 import 'package:inventra_app/features/auth/providers/auth_provider.dart';
+import 'package:inventra_app/core/utils/responsive_utils.dart';
 
 class UsersRolesTab extends ConsumerStatefulWidget {
   const UsersRolesTab({super.key});
@@ -144,7 +145,7 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
         builder: (ctx, setDState) => AlertDialog(
           title: const Text('Yeni Kullanıcı'),
           content: SizedBox(
-            width: 400,
+            width: context.dialogWidth(400),
             child: SingleChildScrollView(child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -257,7 +258,7 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
         builder: (ctx, setDState) => AlertDialog(
           title: Text('Kullanıcı Düzenle: ${user['staff_id']}'),
           content: SizedBox(
-            width: 400,
+            width: context.dialogWidth(400),
             child: SingleChildScrollView(child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -402,7 +403,7 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
         builder: (ctx, setDState) => AlertDialog(
           title: const Text('Yeni Rol'),
           content: SizedBox(
-            width: 400,
+            width: context.dialogWidth(400),
             child: SingleChildScrollView(child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -456,7 +457,7 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
         builder: (ctx, setDState) => AlertDialog(
           title: Text('Rol Düzenle: ${role['name']}'),
           content: SizedBox(
-            width: 400,
+            width: context.dialogWidth(400),
             child: SingleChildScrollView(child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [

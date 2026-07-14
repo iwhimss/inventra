@@ -119,7 +119,7 @@ Her gelen istek şu zincirden geçer:
 
 | Tablo | Amaç | Önemli Sütunlar |
 |---|---|---|
-| `products` | Ürün kataloğu (ana barkod) | barcode, name, sale_price, purchase_price, sale_price_2, sale_price_3, stock, critical_stock_level, vat_rate, unit, product_group, is_fast_product, image_path |
+| `products` | Ürün kataloğu (ana barkod) | barcode, name, sale_price, purchase_price, sale_price_2, sale_price_3, stock, critical_stock_level, vat_rate, unit, product_group, is_fast_product, image_path, shelf_location |
 | `product_barcodes` | Çoklu barkod havuzu (alias) — bir ürünün ana barkodu dışındaki ek barkodları | product_id (FK), barcode, created_at |
 | `product_groups` | Ürün kategorileri | name, color |
 | `sales` | Satış başlıkları | total_amount, paid_amount, payment_method, cash_amount, card_amount, cashier_id, discount |
@@ -138,7 +138,7 @@ Her gelen istek şu zincirden geçer:
 | `label_templates` | Etiket şablonları | name, config (JSON — etiket tasarım verisi) |
 | `events` | Değişiklik olayları | type, table_name, record_id, data, device_id (delta sync için) |
 
-**Migration sistemi** mevcut: 12 migration adımı, `PRAGMA table_info` ile sütun varlığı kontrol edilerek çalışır (destructive değil, additive).
+**Migration sistemi** mevcut: 13 migration adımı, `PRAGMA table_info` ile sütun varlığı kontrol edilerek çalışır (destructive değil, additive).
 
 ---
 
@@ -378,8 +378,8 @@ Sunucu içinde tamamen Dart ile render edilen server-side HTML arayüz. Harici J
 |---|---|
 | `/admin/dashboard` | Çalışma süresi, bugünkü ciro, ürün sayısı, bağlı cihaz sayısı, API key, versiyon |
 | `/admin/devices` | Bekleyen eşleme isteklerini onayla/reddet; onaylı cihaz listesi, yeniden adlandırma, cihaz kaldırma |
-| `/admin/users` | Personel ekleme/silme (staff_id, şifre, ad, rol) |
-| `/admin/roles` | Rol tanımlama ve izin yönetimi |
+| `/admin/users` | Personel ekleme/düzenleme/silme (staff_id, şifre, ad, rol, 9'lu izin checkbox grid — uygulama içiyle aynı granülerlik) |
+| `/admin/roles` | Rol tanımlama/düzenleme/silme, izin checkbox grid |
 | `/admin/settings` | İşletme bilgileri, KDV varsayılanı, termal genişlik, güncelleme kontrolü (`min_app_version`) |
 
 UI: Dark theme, CSS variables, responsive grid — tamamen Dart string interpolation ile render edilir.

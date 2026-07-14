@@ -6,7 +6,7 @@
 
 ## Özellikler
 
-- **Stok Yönetimi** — Ürün ekleme, düzenleme, kategori ve birim desteği, ondalık miktar/stok takibi
+- **Stok Yönetimi** — Ürün ekleme, düzenleme, kategori ve birim desteği, ondalık miktar/stok takibi, raf konumu takibi
 - **Çoklu Barkod** — Bir ürüne birden fazla barkod (alias) tanımlama; tedarikçi barkodu değişse de ürün kaybolmaz
 - **POS Ekranı** — Hızlı satış, sepet, barkod okuma desteği, fiyat teklifi PDF'i
 - **Müşteri & Tedarikçi** — Cari hesap takibi
@@ -199,7 +199,7 @@ Sunucu çalıştıktan sonra tarayıcıdan `http://<sunucu-ip>:5000/admin` adres
 | **Satışlar** | Satış geçmişi (bugün/hafta/ay/tümü), toplam ciro, ödeme türü |
 | **Loglar** | Aktivite logları (auth/ürün/satış/kasa/sistem tipine göre filtrelenebilir) |
 | **Cihazlar** | Eşleme isteklerini onaylama/reddetme, bağlı cihazlar, cihaz yeniden adlandırma |
-| **Kullanıcılar** | Kullanıcı ekleme/silme |
+| **Kullanıcılar** | Kullanıcı ekleme/düzenleme/silme, izin (checkbox) yönetimi |
 | **Ayarlar** | İşletme bilgileri, port/host düzenleme, API key görüntüleme, güncelleme kontrolü (minimum uygulama sürümü), sıfırlama |
 
 ---

@@ -13,6 +13,7 @@ class Product {
   final String? keywords;
   final String? productGroup;
   final String? imagePath;
+  final String? shelfLocation;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -31,6 +32,7 @@ class Product {
     this.keywords,
     this.productGroup,
     this.imagePath,
+    this.shelfLocation,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -51,6 +53,7 @@ class Product {
       'keywords': keywords,
       'product_group': productGroup,
       'image_path': imagePath,
+      'shelf_location': shelfLocation,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -72,6 +75,7 @@ class Product {
       keywords: map['keywords'],
       productGroup: map['product_group'],
       imagePath: map['image_path'],
+      shelfLocation: map['shelf_location'],
       createdAt: DateTime.parse(map['created_at']),
       updatedAt: DateTime.parse(map['updated_at']),
     );

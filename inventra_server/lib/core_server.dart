@@ -796,6 +796,7 @@ class CoreServer {
         'critical_stock_level': body['critical_stock_level'] ?? 0,
         'keywords': body['keywords'],
         'image_path': body['image_path'],
+        'shelf_location': body['shelf_location'] ?? '',
         'created_at': body['created_at'] ?? now,
         'updated_at': body['updated_at'] ?? now,
       });
@@ -817,7 +818,7 @@ class CoreServer {
       body['updated_at'] = DateTime.now().toIso8601String();
       body.remove('id');
 
-      final validCols = {'barcode', 'name', 'stock', 'purchase_price', 'sale_price', 'vat_rate', 'unit', 'is_fast_product', 'product_group', 'critical_stock_level', 'updated_at', 'created_at', 'sale_price_2', 'sale_price_3', 'keywords', 'image_path'};
+      final validCols = {'barcode', 'name', 'stock', 'purchase_price', 'sale_price', 'vat_rate', 'unit', 'is_fast_product', 'product_group', 'critical_stock_level', 'updated_at', 'created_at', 'sale_price_2', 'sale_price_3', 'keywords', 'image_path', 'shelf_location'};
       body.removeWhere((key, _) => !validCols.contains(key));
 
       // Get current stock to log difference

@@ -858,6 +858,8 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(item.productName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                if (product?.shelfLocation != null && product!.shelfLocation!.isNotEmpty)
+                                  Text('Raf: ${product.shelfLocation}', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
                                 const SizedBox(height: 6),
                                 Text(
                                   item.discount > 0
@@ -1723,6 +1725,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                       ),
                       subtitle: Row(
                         children: [
+                          Expanded(child: Row(children: [
                           if (p.barcode.isNotEmpty) ...[
                             Flexible(
                               child: Text('Barkod: ${p.barcode}', style: TextStyle(fontSize: 11, color: AppTheme.textMuted), overflow: TextOverflow.ellipsis),
@@ -1731,12 +1734,18 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                           ],
                           StockWarningIcon(stock: p.stock),
                           const SizedBox(width: 2),
-                          Text('Stok: ${p.stock}', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                          Text('Stok: ${formatQty(p.stock)}', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                          if (p.shelfLocation != null && p.shelfLocation!.isNotEmpty) ...[
+                            const Text(' • ', style: TextStyle(fontSize: 11)),
+                            Text('Raf: ${p.shelfLocation}', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                          ],
+                          ])),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${p.salePrice.toStringAsFixed(2)} \u20ba',
+                            style: TextStyle(color: AppTheme.accentText, fontWeight: FontWeight.w900, fontSize: 14),
+                          ),
                         ],
-                      ),
-                      trailing: Text(
-                        '${p.salePrice.toStringAsFixed(2)} \u20ba',
-                        style: TextStyle(color: AppTheme.accentText, fontWeight: FontWeight.w900, fontSize: 16),
                       ),
                       onTap: () {
                         _showPriceSelectionDialog(p, cartNotifier);

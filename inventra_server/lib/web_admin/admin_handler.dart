@@ -36,9 +36,11 @@ class AdminHandler {
     r.post('/admin/devices/rename', _renameDevice);
     r.get('/admin/users', _usersPage);
     r.post('/admin/users', _createUser);
+    r.post('/admin/users/update', _updateUser);
     r.post('/admin/users/delete', _deleteUser);
     r.get('/admin/roles', _rolesPage);
     r.post('/admin/roles', _createRole);
+    r.post('/admin/roles/update', _updateRole);
     r.post('/admin/roles/delete', _deleteRole);
     r.get('/admin/settings', _settingsPage);
     r.post('/admin/settings', _saveSettings);
@@ -360,13 +362,92 @@ class AdminHandler {
 
   // ─── Users ────────────────────────────────────────────────
 
+  /// Uygulamadaki (`users_roles_tab.dart` → `_buildPermChecks`) 9 izin anahtarıyla
+  /// birebir eşleşir — web dashboard ile uygulama içi izin yönetimi aynı granülerliği paylaşır.
+  static const Map<String, String> _permLabels = {
+    'pos': 'Satış Ekranı (POS)',
+    'products': 'Ürün Yönetimi',
+    'history': 'Geçmiş İşlemler',
+    'reports': 'Raporlar ve Analiz',
+    'labels': 'Etiket Tasarımı',
+    'settings': 'Ayarlar',
+    'converter': 'Dönüştürücü',
+    'movements': 'Hareketler',
+    'clients': 'Müşteri/Tedarikçi',
+  };
+
+  String _permCheckboxesHtml(Map<String, dynamic> perms) {
+    return _permLabels.entries.map((e) {
+      final checked = perms[e.key] == true ? ' checked' : '';
+      return '<label style="display:flex;align-items:center;gap:6px;margin:4px 0;font-weight:normal;font-size:13px">'
+          '<input type="checkbox" name="perm_${e.key}" value="1"$checked style="width:auto;margin:0">${_esc(e.value)}'
+          '</label>';
+    }).join();
+  }
+
+  /// HTML formlarında işaretlenmemiş checkbox'lar hiç gönderilmez — eksik anahtar = false.
+  Map<String, dynamic> _parsePermsFromForm(Map<String, String> params) {
+    return {for (final k in _permLabels.keys) k: params.containsKey('perm_$k')};
+  }
+
+  Map<String, dynamic> _decodePerms(dynamic raw) {
+    try {
+      final s = raw?.toString() ?? '{}';
+      if (s.startsWith('{')) return json.decode(s) as Map<String, dynamic>;
+    } catch (_) {}
+    return {};
+  }
+
+  String _roleOptionsHtml(List<Map<String, dynamic>> roles, String? selected) {
+    const builtIn = {'staff': 'Personel', 'manager': 'Yönetici', 'owner': 'Sahip'};
+    final buf = StringBuffer();
+    builtIn.forEach((value, label) {
+      buf.write('<option value="$value"${value == selected ? ' selected' : ''}>$label</option>');
+    });
+    for (final r in roles) {
+      final value = 'custom_${r['id']}';
+      buf.write('<option value="$value"${value == selected ? ' selected' : ''}>${_esc(r['name'])}</option>');
+    }
+    return buf.toString();
+  }
+
   Response _usersPage(Request request) {
     if (!_isAuthenticated(request)) return _redirect('/admin/login');
     final users = _db.queryAll('users');
+    final roles = _db.queryAll('roles');
     final msg = request.url.queryParameters['msg'] ?? '';
+    final editId = request.url.queryParameters['edit'];
 
-    return _html(_renderPage('Kullanıcılar', '''
-      ${msg.isNotEmpty ? '<div class="alert alert-success">${_esc(msg)}</div>' : ''}
+    Map<String, dynamic>? editingUser;
+    if (editId != null) {
+      final match = users.where((u) => u['id']?.toString() == editId);
+      if (match.isNotEmpty) editingUser = match.first;
+    }
+
+    final formHtml = editingUser != null ? '''
+      <div class="form-section">
+        <h3>Kullanıcı Düzenle: ${_esc(editingUser['staff_id'])}</h3>
+        <form method="POST" action="/admin/users/update">
+          <input type="hidden" name="id" value="${_esc(editingUser['id'])}">
+          <label>Ad Soyad</label>
+          <input type="text" name="name" value="${_esc(editingUser['name'] ?? '')}">
+          <label>Yeni Şifre (boş = değişmez)</label>
+          <input type="password" name="password" placeholder="Değiştirmek için doldurun">
+          <label>Rol</label>
+          <select name="role" id="edit_role_select" onchange="document.getElementById('edit_perms_box').style.display = this.value === 'owner' ? 'none' : 'block'">
+            ${_roleOptionsHtml(roles, editingUser['role']?.toString())}
+          </select>
+          <div id="edit_perms_box" style="${editingUser['role'] == 'owner' ? 'display:none;' : ''}margin-top:12px">
+            <div style="font-weight:bold;margin-bottom:6px;font-size:13px">Yetkiler:</div>
+            ${_permCheckboxesHtml(_decodePerms(editingUser['permissions']))}
+          </div>
+          <div style="margin-top:12px">
+            <button type="submit">Güncelle</button>
+            <a href="/admin/users" class="btn-small" style="margin-left:8px">İptal</a>
+          </div>
+        </form>
+      </div>
+    ''' : '''
       <div class="form-section">
         <h3>Yeni Kullanıcı Ekle</h3>
         <form method="POST" action="/admin/users" class="inline-form">
@@ -374,13 +455,16 @@ class AdminHandler {
           <input type="text" name="name" placeholder="Ad Soyad">
           <input type="password" name="password" placeholder="Şifre" required>
           <select name="role">
-            <option value="staff">Personel</option>
-            <option value="manager">Yönetici</option>
-            <option value="owner">Sahip</option>
+            ${_roleOptionsHtml(roles, null)}
           </select>
           <button type="submit">Ekle</button>
         </form>
       </div>
+    ''';
+
+    return _html(_renderPage('Kullanıcılar', '''
+      ${msg.isNotEmpty ? '<div class="alert alert-success">${_esc(msg)}</div>' : ''}
+      $formHtml
       <h3>Mevcut Kullanıcılar (${users.length})</h3>
       <table class="data-table">
         <thead><tr><th>Staff ID</th><th>Ad</th><th>Rol</th><th></th></tr></thead>
@@ -391,6 +475,7 @@ class AdminHandler {
               <td>${_esc(u['name'] ?? '')}</td>
               <td><span class="role-badge role-${_esc(u['role'])}">${_esc(u['role'])}</span></td>
               <td>
+                <a href="/admin/users?edit=${_esc(u['id'])}" class="btn-small">Düzenle</a>
                 <form method="POST" action="/admin/users/delete" style="display:inline" onsubmit="return confirm('Silmek istediğinize emin misiniz?')">
                   <input type="hidden" name="id" value="${_esc(u['id'])}">
                   <button type="submit" class="btn-small btn-reject">Sil</button>
@@ -414,6 +499,17 @@ class AdminHandler {
 
     if (staffId.isEmpty || password.isEmpty) return _redirect(_buildUrl('/admin/users', {'msg': 'Eksik bilgi'}));
 
+    String permissions;
+    if (role == 'owner') {
+      permissions = 'all';
+    } else if (role.startsWith('custom_')) {
+      final roleId = role.replaceFirst('custom_', '');
+      final match = _db.query('SELECT permissions FROM roles WHERE id = ?', [roleId]);
+      permissions = match.isNotEmpty ? (match.first['permissions']?.toString() ?? '{}') : '{}';
+    } else {
+      permissions = '{}';
+    }
+
     final hash = sha256.convert(utf8.encode(password)).toString();
     try {
       _db.insert('users', {
@@ -422,12 +518,36 @@ class AdminHandler {
         'password_hash': hash,
         'name': name,
         'role': role,
-        'permissions': role == 'owner' ? 'all' : '{}',
+        'permissions': permissions,
       });
       return _redirect(_buildUrl('/admin/users', {'msg': 'Kullanıcı eklendi'}));
     } catch (e) {
       return _redirect(_buildUrl('/admin/users', {'msg': 'Hata: ${e.toString()}'}));
     }
+  }
+
+  Future<Response> _updateUser(Request request) async {
+    if (!_isAuthenticated(request)) return _redirect('/admin/login');
+    final body = await request.readAsString();
+    final params = Uri.splitQueryString(body);
+    final id = params['id'] ?? '';
+    if (id.isEmpty) return _redirect('/admin/users');
+
+    final name = params['name'] ?? '';
+    final role = params['role'] ?? 'staff';
+    final password = params['password'] ?? '';
+    final permissions = role == 'owner' ? 'all' : json.encode(_parsePermsFromForm(params));
+
+    final updates = <String, dynamic>{
+      'name': name,
+      'role': role,
+      'permissions': permissions,
+    };
+    if (password.isNotEmpty) {
+      updates['password_hash'] = sha256.convert(utf8.encode(password)).toString();
+    }
+    _db.update('users', updates, where: 'id = ?', whereArgs: [id]);
+    return _redirect(_buildUrl('/admin/users', {'msg': 'Kullanıcı güncellendi'}));
   }
 
   Future<Response> _deleteUser(Request request) async {
@@ -444,16 +564,48 @@ class AdminHandler {
   Response _rolesPage(Request request) {
     if (!_isAuthenticated(request)) return _redirect('/admin/login');
     final roles = _db.queryAll('roles');
+    final editId = request.url.queryParameters['edit'];
 
-    return _html(_renderPage('Roller', '''
+    Map<String, dynamic>? editingRole;
+    if (editId != null) {
+      final match = roles.where((r) => r['id']?.toString() == editId);
+      if (match.isNotEmpty) editingRole = match.first;
+    }
+
+    final formHtml = editingRole != null ? '''
       <div class="form-section">
-        <h3>Yeni Rol Ekle</h3>
-        <form method="POST" action="/admin/roles" class="inline-form">
-          <input type="text" name="name" placeholder="Rol Adı" required>
-          <input type="text" name="permissions" placeholder="İzinler (JSON)" value="{}">
-          <button type="submit">Ekle</button>
+        <h3>Rol Düzenle: ${_esc(editingRole['name'])}</h3>
+        <form method="POST" action="/admin/roles/update">
+          <input type="hidden" name="id" value="${_esc(editingRole['id'])}">
+          <label>Rol Adı</label>
+          <input type="text" name="name" value="${_esc(editingRole['name'])}" required>
+          <div style="margin-top:12px">
+            <div style="font-weight:bold;margin-bottom:6px;font-size:13px">Yetkiler:</div>
+            ${_permCheckboxesHtml(_decodePerms(editingRole['permissions']))}
+          </div>
+          <div style="margin-top:12px">
+            <button type="submit">Güncelle</button>
+            <a href="/admin/roles" class="btn-small" style="margin-left:8px">İptal</a>
+          </div>
         </form>
       </div>
+    ''' : '''
+      <div class="form-section">
+        <h3>Yeni Rol Ekle</h3>
+        <form method="POST" action="/admin/roles">
+          <label>Rol Adı</label>
+          <input type="text" name="name" placeholder="Rol Adı" required>
+          <div style="margin-top:12px">
+            <div style="font-weight:bold;margin-bottom:6px;font-size:13px">Yetkiler:</div>
+            ${_permCheckboxesHtml(const {})}
+          </div>
+          <div style="margin-top:12px"><button type="submit">Ekle</button></div>
+        </form>
+      </div>
+    ''';
+
+    return _html(_renderPage('Roller', '''
+      $formHtml
       <h3>Mevcut Roller (${roles.length})</h3>
       <table class="data-table">
         <thead><tr><th>Ad</th><th>İzinler</th><th></th></tr></thead>
@@ -463,6 +615,7 @@ class AdminHandler {
               <td>${_esc(r['name'])}</td>
               <td class="mono" style="max-width:300px;overflow:hidden;text-overflow:ellipsis">${_esc(r['permissions'])}</td>
               <td>
+                <a href="/admin/roles?edit=${_esc(r['id'])}" class="btn-small">Düzenle</a>
                 <form method="POST" action="/admin/roles/delete" style="display:inline" onsubmit="return confirm('Silmek istediğinize emin misiniz?')">
                   <input type="hidden" name="id" value="${_esc(r['id'])}">
                   <button type="submit" class="btn-small btn-reject">Sil</button>
@@ -480,13 +633,26 @@ class AdminHandler {
     final body = await request.readAsString();
     final params = Uri.splitQueryString(body);
     final name = params['name'] ?? '';
-    final permissions = params['permissions'] ?? '{}';
     if (name.isEmpty) return _redirect('/admin/roles');
     _db.insert('roles', {
       'id': 'role_${DateTime.now().millisecondsSinceEpoch}',
       'name': name,
-      'permissions': permissions,
+      'permissions': json.encode(_parsePermsFromForm(params)),
     });
+    return _redirect('/admin/roles');
+  }
+
+  Future<Response> _updateRole(Request request) async {
+    if (!_isAuthenticated(request)) return _redirect('/admin/login');
+    final body = await request.readAsString();
+    final params = Uri.splitQueryString(body);
+    final id = params['id'] ?? '';
+    final name = params['name'] ?? '';
+    if (id.isEmpty || name.isEmpty) return _redirect('/admin/roles');
+    _db.update('roles', {
+      'name': name,
+      'permissions': json.encode(_parsePermsFromForm(params)),
+    }, where: 'id = ?', whereArgs: [id]);
     return _redirect('/admin/roles');
   }
 

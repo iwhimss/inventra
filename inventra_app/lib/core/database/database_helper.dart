@@ -88,7 +88,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path, 
-      version: 16,
+      version: 17,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -279,6 +279,10 @@ class DatabaseHelper {
           // Phase 9: User display name for offline login & activity log
           try { await db.execute("ALTER TABLE users ADD COLUMN name TEXT DEFAULT ''"); } catch (_) {}
         }
+        if (oldVersion < 17) {
+          // Raf sistemi: ürünün fiziksel raf konumu (ör. "A1")
+          try { await db.execute("ALTER TABLE products ADD COLUMN shelf_location TEXT DEFAULT ''"); } catch (_) {}
+        }
       },
     );
   }
@@ -307,6 +311,7 @@ class DatabaseHelper {
       keywords $textNullable,
       product_group $textNullable,
       image_path $textNullable,
+      shelf_location $textNullable,
       created_at $textType,
       updated_at $textType
     )

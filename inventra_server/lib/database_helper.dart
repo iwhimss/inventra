@@ -53,6 +53,7 @@ class ServerDatabaseHelper {
         is_fast_product INTEGER NOT NULL DEFAULT 0,
         keywords TEXT DEFAULT '',
         image_path TEXT DEFAULT '',
+        shelf_location TEXT DEFAULT '',
         created_at TEXT,
         updated_at TEXT
       )
@@ -454,6 +455,15 @@ class ServerDatabaseHelper {
       _db.execute('CREATE INDEX IF NOT EXISTS idx_product_barcodes_barcode ON product_barcodes(barcode)');
       _db.execute('CREATE INDEX IF NOT EXISTS idx_product_barcodes_product_id ON product_barcodes(product_id)');
       _db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_product_barcodes_unique ON product_barcodes(barcode, product_id)');
+    } catch (_) {}
+
+    // Migration 13: Raf sistemi — ürünün fiziksel raf konumu (ör. "A1")
+    try {
+      final cols = _db.select("PRAGMA table_info(products)");
+      final colNames = cols.map((c) => c['name'] as String).toSet();
+      if (!colNames.contains('shelf_location')) {
+        _db.execute("ALTER TABLE products ADD COLUMN shelf_location TEXT DEFAULT ''");
+      }
     } catch (_) {}
   }
 

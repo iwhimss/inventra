@@ -151,6 +151,7 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
     double? salePrice2,
     double? salePrice3,
     String? imageBase64,
+    String? shelfLocation,
   }) async {
     lastError = null;
     lastImageUploadFailed = false;
@@ -188,6 +189,7 @@ class ProductNotifier extends StateNotifier<AsyncValue<List<Product>>> {
         keywords: keywords,
         productGroup: productGroup,
         imagePath: imagePath,
+        shelfLocation: shelfLocation,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );

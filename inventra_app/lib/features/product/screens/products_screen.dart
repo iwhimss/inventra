@@ -163,6 +163,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
               salePrice3,
               imageBase64,
               clearImage,
+              shelfLocation,
             ) async {
               return await ref
                   .read(productProvider.notifier)
@@ -179,6 +180,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                     productGroup: productGroup,
                     salePrice3: salePrice3,
                     imageBase64: imageBase64,
+                    shelfLocation: shelfLocation,
                   );
             },
       ),
@@ -206,6 +208,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
               salePrice3,
               imageBase64,
               clearImage,
+              shelfLocation,
             ) async {
               final updated = Product(
                 id: product.id,
@@ -221,6 +224,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                 isFastProduct: isFast,
                 keywords: keywords,
                 productGroup: productGroup,
+                shelfLocation: shelfLocation,
                 createdAt: product.createdAt,
                 updatedAt: DateTime.now(),
               );
@@ -964,7 +968,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                                         ),
                                         Text(
-                                          'Barkod: ${p.barcode} • Stok: ${formatQty(p.stock)}',
+                                          'Barkod: ${p.barcode} • Stok: ${formatQty(p.stock)}${p.shelfLocation != null && p.shelfLocation!.isNotEmpty ? ' • Raf: ${p.shelfLocation}' : ''}',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
@@ -1259,7 +1263,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                           ),
                                         ),
                                         Text(
-                                          'Barkod: ${p.barcode} • Mevcut Stok: ${formatQty(p.stock)}',
+                                          'Barkod: ${p.barcode} • Mevcut Stok: ${formatQty(p.stock)}${p.shelfLocation != null && p.shelfLocation!.isNotEmpty ? ' • Raf: ${p.shelfLocation}' : ''}',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
@@ -1591,7 +1595,7 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                                           ),
                                         ),
                                         Text(
-                                          'Barkod: ${p.barcode} • Mevcut Stok: ${formatQty(p.stock)}',
+                                          'Barkod: ${p.barcode} • Mevcut Stok: ${formatQty(p.stock)}${p.shelfLocation != null && p.shelfLocation!.isNotEmpty ? ' • Raf: ${p.shelfLocation}' : ''}',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
@@ -1723,6 +1727,7 @@ class _ProductFormDialog extends ConsumerStatefulWidget {
     double? salePrice3,
     String? imageBase64,
     bool clearImage,
+    String? shelfLocation,
   ) onSave;
 
   const _ProductFormDialog({this.product, this.onDelete, required this.onSave});
@@ -1741,6 +1746,7 @@ class _ProductFormDialogState extends ConsumerState<_ProductFormDialog> {
   late final TextEditingController _salePrice3Ctrl;
   late final TextEditingController _vatRateCtrl;
   late final TextEditingController _keywordsCtrl;
+  late final TextEditingController _shelfLocationCtrl;
   late String _selectedUnit;
   late bool _isFastProduct;
   String? _selectedGroup;
@@ -1774,6 +1780,7 @@ class _ProductFormDialogState extends ConsumerState<_ProductFormDialog> {
     _vatRateCtrl = TextEditingController(text: p?.vatRate.toString() ?? '20');
     _loadDefaultVat();
     _keywordsCtrl = TextEditingController(text: p?.keywords ?? '');
+    _shelfLocationCtrl = TextEditingController(text: p?.shelfLocation ?? '');
     _selectedUnit = p?.unit ?? 'Adet';
     _isFastProduct = p?.isFastProduct ?? false;
     _selectedGroup = p?.productGroup;
@@ -1993,6 +2000,7 @@ class _ProductFormDialogState extends ConsumerState<_ProductFormDialog> {
       salePrice3,
       _imageBase64,
       _clearExistingImage,
+      _shelfLocationCtrl.text.isNotEmpty ? _shelfLocationCtrl.text : null,
     );
 
     setState(() => _isLoading = false);
@@ -2150,6 +2158,11 @@ class _ProductFormDialogState extends ConsumerState<_ProductFormDialog> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _shelfLocationCtrl,
+                decoration: InputDecoration(labelText: 'Raf (ör. A1)'),
               ),
               const SizedBox(height: 12),
               Row(
