@@ -1728,7 +1728,7 @@ class CoreServer {
             .toList();
 
         // Geçersiz sütunları filtrele (INSERT ve UPDATE için ortak)
-        final validCols = {'id', 'barcode', 'name', 'stock', 'purchase_price', 'sale_price', 'sale_price_2', 'sale_price_3', 'vat_rate', 'unit', 'product_group', 'is_fast_product', 'keywords', 'image_path', 'created_at', 'updated_at'};
+        final validCols = {'id', 'barcode', 'name', 'stock', 'purchase_price', 'sale_price', 'sale_price_2', 'sale_price_3', 'vat_rate', 'unit', 'product_group', 'is_fast_product', 'keywords', 'image_path', 'shelf_location', 'created_at', 'updated_at'};
         map.removeWhere((key, _) => !validCols.contains(key));
         // Null değerleri temizle (bazı alanlar SQLite'te null olamamalı, keywords hariç default null kabul edilir)
         map.removeWhere((key, value) => value == null && key != 'product_group' && key != 'keywords');

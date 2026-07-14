@@ -35,6 +35,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
     'Anahtar Kelimeler',
     'Ürün Grubu',
     'Alternatif Barkodlar',
+    'Raf Konumu',
   ];
 
   final Map<String, int?> _fieldMapping = {};
@@ -171,6 +172,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
           TextCellValue('Anahtar Kelimeler'),
           TextCellValue('Ürün Grubu'),
           TextCellValue('Alternatif Barkodlar'),
+          TextCellValue('Raf'),
        ]);
 
        for (var i = 1; i < sourceTable.maxRows; i++) {
@@ -201,6 +203,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
              TextCellValue(getVal('Anahtar Kelimeler')),
              TextCellValue(getVal('Ürün Grubu')),
              TextCellValue(getVal('Alternatif Barkodlar')),
+             TextCellValue(getVal('Raf Konumu')),
            ]);
          } catch (_) {}
        }

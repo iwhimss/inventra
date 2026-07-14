@@ -6,7 +6,7 @@
 
 ## Özellikler
 
-- **Stok Yönetimi** — Ürün ekleme, düzenleme, kategori ve birim desteği, ondalık miktar/stok takibi, raf konumu takibi
+- **Stok Yönetimi** — Ürün ekleme, düzenleme, kategori ve birim desteği, ondalık miktar/stok takibi, raf konumu takibi (Excel yedeğine ve dönüştürücüye dahil)
 - **Çoklu Barkod** — Bir ürüne birden fazla barkod (alias) tanımlama; tedarikçi barkodu değişse de ürün kaybolmaz
 - **POS Ekranı** — Hızlı satış, sepet, barkod okuma desteği, fiyat teklifi PDF'i
 - **Müşteri & Tedarikçi** — Cari hesap takibi

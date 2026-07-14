@@ -59,6 +59,7 @@ class ExcelService {
         TextCellValue('Anahtar Kelimeler'),
         TextCellValue('Ürün Grubu'),
         TextCellValue('Alternatif Barkodlar'),
+        TextCellValue('Raf'),
       ]);
 
       // Data Rows
@@ -77,6 +78,7 @@ class ExcelService {
           TextCellValue(p.keywords ?? ''),
           TextCellValue(p.productGroup ?? ''),
           TextCellValue((aliasByProduct[p.id] ?? const []).join(',')),
+          TextCellValue(p.shelfLocation ?? ''),
         ]);
       }
 
@@ -159,6 +161,7 @@ class ExcelService {
             String keywords = row.length > 10 ? (row[10]?.value.toString() ?? '') : '';
             String productGroup = row.length > 11 ? (row[11]?.value.toString() ?? '') : '';
             String aliasBarcodes = row.length > 12 ? (row[12]?.value.toString() ?? '') : '';
+            String shelfLocation = row.length > 13 ? (row[13]?.value.toString() ?? '') : '';
 
             if (productGroup.isNotEmpty) productGroups.add(productGroup);
 
@@ -174,6 +177,7 @@ class ExcelService {
               'is_fast_product': isFast ? 1 : 0,
               'keywords': keywords.isNotEmpty ? keywords : null,
               'product_group': productGroup.isNotEmpty ? productGroup : null,
+              'shelf_location': shelfLocation.isNotEmpty ? shelfLocation : null,
               if (aliasBarcodes.isNotEmpty) 'alias_barcodes': aliasBarcodes,
             };
 
