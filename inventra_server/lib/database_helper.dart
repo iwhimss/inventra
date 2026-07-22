@@ -79,6 +79,7 @@ class ServerDatabaseHelper {
         cashier_name TEXT,
         discount REAL DEFAULT 0,
         note TEXT DEFAULT '',
+        customer_name TEXT DEFAULT '',
         created_at TEXT
       )
     ''');
@@ -464,6 +465,45 @@ class ServerDatabaseHelper {
       if (!colNames.contains('shelf_location')) {
         _db.execute("ALTER TABLE products ADD COLUMN shelf_location TEXT DEFAULT ''");
       }
+    } catch (_) {}
+
+    // Migration 14: Satışa isteğe bağlı müşteri ismi ekleme
+    try {
+      final cols = _db.select("PRAGMA table_info(sales)");
+      final colNames = cols.map((c) => c['name'] as String).toSet();
+      if (!colNames.contains('customer_name')) {
+        _db.execute("ALTER TABLE sales ADD COLUMN customer_name TEXT DEFAULT ''");
+      }
+    } catch (_) {}
+
+    // Migration 15: İade alma sistemi — returns / return_items tabloları
+    try {
+      _db.execute('''
+        CREATE TABLE IF NOT EXISTS returns (
+          id TEXT PRIMARY KEY,
+          sale_id TEXT,
+          total_amount REAL NOT NULL DEFAULT 0,
+          refund_method TEXT NOT NULL DEFAULT 'cash',
+          staff_id TEXT DEFAULT '',
+          staff_name TEXT DEFAULT '',
+          note TEXT DEFAULT '',
+          created_at TEXT
+        )
+      ''');
+      _db.execute('''
+        CREATE TABLE IF NOT EXISTS return_items (
+          id TEXT PRIMARY KEY,
+          return_id TEXT NOT NULL,
+          product_id TEXT,
+          product_name TEXT DEFAULT '',
+          quantity REAL NOT NULL DEFAULT 0,
+          unit_price REAL NOT NULL DEFAULT 0,
+          total_price REAL NOT NULL DEFAULT 0,
+          FOREIGN KEY (return_id) REFERENCES returns(id) ON DELETE CASCADE
+        )
+      ''');
+      _db.execute('CREATE INDEX IF NOT EXISTS idx_returns_sale_id ON returns(sale_id)');
+      _db.execute('CREATE INDEX IF NOT EXISTS idx_return_items_return_id ON return_items(return_id)');
     } catch (_) {}
   }
 

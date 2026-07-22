@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +10,7 @@ import 'package:inventra_app/features/receipt/services/pdf_service.dart';
 import 'package:inventra_app/core/services/sound_service.dart';
 import 'package:inventra_app/features/analytics/providers/sales_history_provider.dart';
 import 'package:inventra_app/core/utils/format_utils.dart';
+import 'package:inventra_app/features/pos/screens/return_screen.dart';
 
 class SalesHistoryScreen extends ConsumerStatefulWidget {
   const SalesHistoryScreen({super.key});
@@ -19,10 +20,22 @@ class SalesHistoryScreen extends ConsumerStatefulWidget {
 }
 
 class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
+  final TextEditingController _minTotalController = TextEditingController();
+  final TextEditingController _maxTotalController = TextEditingController();
+  final TextEditingController _customerNameController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     Future.microtask(() => ref.read(salesHistoryProvider.notifier).loadSales());
+  }
+
+  @override
+  void dispose() {
+    _minTotalController.dispose();
+    _maxTotalController.dispose();
+    _customerNameController.dispose();
+    super.dispose();
   }
 
   Future<void> _pickDate(bool isStart) async {
@@ -41,7 +54,34 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
     }
   }
 
+  Future<void> _pickTime(bool isStart) async {
+    final state = ref.read(salesHistoryProvider);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: isStart ? (state.startTime ?? const TimeOfDay(hour: 0, minute: 0)) : (state.endTime ?? const TimeOfDay(hour: 23, minute: 59)),
+    );
+    if (picked != null) {
+      ref.read(salesHistoryProvider.notifier).setTimes(
+        isStart ? picked : state.startTime,
+        !isStart ? picked : state.endTime,
+      );
+    }
+  }
+
+  void _applyTotalRange() {
+    final min = double.tryParse(_minTotalController.text.replaceAll(',', '.'));
+    final max = double.tryParse(_maxTotalController.text.replaceAll(',', '.'));
+    ref.read(salesHistoryProvider.notifier).setTotalRange(min, max);
+  }
+
+  void _applyCustomerName() {
+    ref.read(salesHistoryProvider.notifier).setCustomerName(_customerNameController.text.trim());
+  }
+
   void _clearFilter() {
+    _minTotalController.clear();
+    _maxTotalController.clear();
+    _customerNameController.clear();
     ref.read(salesHistoryProvider.notifier).clearFilter();
   }
 
@@ -66,7 +106,7 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
     if (confirm != true) return;
 
     bool isDesktop = !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
-    
+
     if (isDesktop) {
       // Windows: delete from local DB directly
       final db = await DatabaseHelper.instance.database;
@@ -87,6 +127,7 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
   }
 
   String _formatDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
+  String _formatTime(TimeOfDay t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   void _showSaleDetails(Map<String, dynamic> sale) async {
     final db = await DatabaseHelper.instance.database;
@@ -116,8 +157,12 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
 
     // Ensure price field is populated for PdfService
     for (var i = 0; i < enrichedItems.length; i++) {
-       enrichedItems[i]['price'] = enrichedItems[i]['unit_price']; 
+       enrichedItems[i]['price'] = enrichedItems[i]['unit_price'];
     }
+
+    final returnedAmount = (sale['returned_amount'] as num?)?.toDouble() ?? 0.0;
+    final totalAmount = (sale['total_amount'] as num?)?.toDouble() ?? 0.0;
+    final customerName = sale['customer_name']?.toString() ?? '';
 
     if (!mounted) return;
     showDialog(
@@ -133,7 +178,8 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _infoRow('Tarih', sale['created_at'].toString().substring(0, 16)),
-              _infoRow('Toplam', '${(sale['total_amount'] as num).toStringAsFixed(2)} ₺'),
+              if (customerName.isNotEmpty) _infoRow('Müşteri', customerName),
+              _infoRow('Toplam', '${totalAmount.toStringAsFixed(2)} ₺'),
               if ((sale['discount_amount'] as num?)?.toDouble() != null && (sale['discount_amount'] as num).toDouble() > 0)
                 _infoRow('İndirim', '-${(sale['discount_amount'] as num).toStringAsFixed(2)} ₺'),
               _infoRow('Ödeme', sale['payment_type'].toString()),
@@ -142,6 +188,8 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
               if (sale['change_amount'] != null && (sale['change_amount'] as num).toDouble() > 0)
                 _infoRow('Para Üstü', '${(sale['change_amount'] as num).toStringAsFixed(2)} ₺'),
               _infoRow('Durum', sale['status']?.toString() ?? 'Tamamlandı'),
+              if (returnedAmount > 0)
+                _infoRow('İade Edilen', '-${returnedAmount.toStringAsFixed(2)} ₺'),
               const Divider(),
               const Text('Ürünler:', style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
@@ -166,6 +214,21 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Kapat')),
+          if (returnedAmount < totalAmount)
+            OutlinedButton.icon(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final result = await Navigator.of(context).push<bool>(MaterialPageRoute(
+                  builder: (_) => ReturnScreen(sale: sale, saleItems: enrichedItems),
+                ));
+                if (result == true) {
+                  ref.read(salesHistoryProvider.notifier).loadSales();
+                }
+              },
+              icon: Icon(Icons.assignment_return, size: 16, color: AppTheme.dangerAccent),
+              label: Text('İade Al', style: TextStyle(color: AppTheme.dangerAccent)),
+              style: OutlinedButton.styleFrom(side: BorderSide(color: AppTheme.dangerAccent.withOpacity(0.5))),
+            ),
           ElevatedButton.icon(
             onPressed: () async {
               Navigator.pop(ctx);
@@ -202,6 +265,52 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
     );
   }
 
+  void _showReturnDetails(Map<String, dynamic> ret) {
+    final items = (ret['items'] as List? ?? []).map((e) => Map<String, dynamic>.from(e)).toList();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.panelBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('İade #${ret['id'].toString().substring(0, 8)}'),
+        content: SizedBox(
+          width: 380,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _infoRow('Tarih', ret['created_at'].toString().substring(0, 16)),
+              _infoRow('Toplam', '-${(ret['total_amount'] as num).toStringAsFixed(2)} ₺'),
+              _infoRow('İade Yöntemi', ret['payment_type'] == 'KREDI_KARTI' ? 'Kart' : 'Nakit'),
+              const Divider(),
+              const Text('Ürünler:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: items.map((item) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(child: Text('${formatQty((item['quantity'] as num?)?.toDouble() ?? 1)}x ${item['product_name'] ?? 'Ürün'}', style: const TextStyle(fontSize: 13))),
+                          Text('${(item['total_price'] as num).toStringAsFixed(2)} ₺', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    )).toList(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Kapat')),
+        ],
+      ),
+    );
+  }
+
   Widget _infoRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -212,6 +321,67 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
           Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
         ],
       ),
+    );
+  }
+
+  Widget _buildExtraFilters(bool isMobile) {
+    final fieldWidth = isMobile ? 110.0 : 130.0;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Consumer(builder: (context, ref, _) {
+          final state = ref.watch(salesHistoryProvider);
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _pickTime(true),
+                icon: const Icon(Icons.access_time, size: 14),
+                label: Text(state.startTime != null ? _formatTime(state.startTime!) : 'Saat Başl.', style: const TextStyle(fontSize: 12)),
+              ),
+              Text('—', style: TextStyle(color: AppTheme.textMuted)),
+              OutlinedButton.icon(
+                onPressed: () => _pickTime(false),
+                icon: const Icon(Icons.access_time, size: 14),
+                label: Text(state.endTime != null ? _formatTime(state.endTime!) : 'Saat Bitiş', style: const TextStyle(fontSize: 12)),
+              ),
+            ],
+          );
+        }),
+        SizedBox(
+          width: fieldWidth,
+          child: TextField(
+            controller: _minTotalController,
+            keyboardType: TextInputType.number,
+            style: const TextStyle(fontSize: 12),
+            decoration: const InputDecoration(labelText: 'Min ₺', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+            onSubmitted: (_) => _applyTotalRange(),
+          ),
+        ),
+        SizedBox(
+          width: fieldWidth,
+          child: TextField(
+            controller: _maxTotalController,
+            keyboardType: TextInputType.number,
+            style: const TextStyle(fontSize: 12),
+            decoration: const InputDecoration(labelText: 'Maks ₺', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+            onSubmitted: (_) => _applyTotalRange(),
+          ),
+        ),
+        IconButton(icon: Icon(Icons.check, size: 18, color: AppTheme.primaryAccent), tooltip: 'Tutar Filtresini Uygula', onPressed: _applyTotalRange),
+        SizedBox(
+          width: isMobile ? 160 : 200,
+          child: TextField(
+            controller: _customerNameController,
+            style: const TextStyle(fontSize: 12),
+            decoration: const InputDecoration(labelText: 'Müşteri Ara', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8), prefixIcon: Icon(Icons.person_search, size: 16)),
+            onSubmitted: (_) => _applyCustomerName(),
+          ),
+        ),
+        IconButton(icon: Icon(Icons.check, size: 18, color: AppTheme.primaryAccent), tooltip: 'Müşteri Filtresini Uygula', onPressed: _applyCustomerName),
+      ],
     );
   }
 
@@ -245,7 +415,7 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
                   icon: const Icon(Icons.calendar_today, size: 14),
                   label: Text(state.endDate != null ? _formatDate(state.endDate!) : 'Bitiş', style: const TextStyle(fontSize: 12)),
                 ),
-                if (state.startDate != null || state.endDate != null)
+                if (state.hasActiveFilters)
                   IconButton(icon: Icon(Icons.clear, color: AppTheme.dangerAccent, size: 18), onPressed: _clearFilter),
                 IconButton(icon: Icon(Icons.refresh, color: AppTheme.primaryAccent, size: 20), onPressed: () => ref.read(salesHistoryProvider.notifier).loadSales()),
                 OutlinedButton(
@@ -255,6 +425,8 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            _buildExtraFilters(true),
           ] else ...[
             Row(
               children: [
@@ -271,7 +443,7 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
                   icon: const Icon(Icons.calendar_today, size: 16),
                   label: Text(state.endDate != null ? _formatDate(state.endDate!) : 'Bitiş'),
                 ),
-                if (state.startDate != null || state.endDate != null) ...[
+                if (state.hasActiveFilters) ...[
                   const SizedBox(width: 8),
                   IconButton(icon: Icon(Icons.clear, color: AppTheme.dangerAccent, size: 20), tooltip: 'Filtreyi Temizle', onPressed: _clearFilter),
                 ],
@@ -286,12 +458,14 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            _buildExtraFilters(false),
           ],
-          if (state.startDate != null || state.endDate != null)
+          if (state.hasActiveFilters)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                'Filtre: ${state.startDate != null ? _formatDate(state.startDate!) : '...'} → ${state.endDate != null ? _formatDate(state.endDate!) : '...'} • ${state.sales.length} sonuç',
+                'Filtre aktif • ${state.sales.length} sonuç',
                 style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
               ),
             ),
@@ -311,25 +485,54 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
                       final formatted = parsed != null
                           ? '${parsed.day.toString().padLeft(2, '0')}.${parsed.month.toString().padLeft(2, '0')}.${parsed.year} ${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}'
                           : dateStr;
+                      final customerName = sale['customer_name']?.toString() ?? '';
+                      final returnedAmount = (sale['returned_amount'] as num?)?.toDouble() ?? 0.0;
+                      final totalAmount = (sale['total_amount'] as num?)?.toDouble() ?? 0.0;
+                      final isReturn = sale['is_return'] == true;
 
                       return ListTile(
                         leading: CircleAvatar(
                           backgroundColor: AppTheme.cardBackground,
                           child: Icon(
-                            sale['payment_type'] == 'NAKIT' ? Icons.money
+                            isReturn ? Icons.assignment_return
+                              : sale['payment_type'] == 'NAKIT' ? Icons.money
                               : sale['payment_type'] == 'KREDI_KARTI' ? Icons.credit_card
                               : Icons.call_split,
-                            color: sale['payment_type'] == 'NAKIT' ? AppTheme.secondaryAccent : AppTheme.primaryAccent,
+                            color: isReturn ? AppTheme.dangerAccent
+                              : sale['payment_type'] == 'NAKIT' ? AppTheme.secondaryAccent : AppTheme.primaryAccent,
                             size: 20,
                           ),
                         ),
                         title: Text(formatted, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        subtitle: Text('#${sale['id'].toString().substring(0, 8)} • ${sale['payment_type']}', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                        trailing: Text(
-                          '${(sale['total_amount'] as num).toStringAsFixed(2)} ₺',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppTheme.primaryAccent),
+                        subtitle: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                isReturn
+                                    ? '#${sale['id'].toString().substring(0, 8)} • İADE • ${sale['payment_type'] == 'KREDI_KARTI' ? 'Kart' : 'Nakit'}'
+                                    : '#${sale['id'].toString().substring(0, 8)} • ${sale['payment_type']}${customerName.isNotEmpty ? ' • $customerName' : ''}',
+                                style: TextStyle(color: isReturn ? AppTheme.dangerAccent : AppTheme.textMuted, fontSize: 12, fontWeight: isReturn ? FontWeight.bold : FontWeight.normal),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (!isReturn && returnedAmount > 0) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(color: AppTheme.dangerAccent.withOpacity(0.15), borderRadius: BorderRadius.circular(4)),
+                                child: Text(
+                                  returnedAmount >= totalAmount ? 'İade Edildi' : 'Kısmi İade',
+                                  style: TextStyle(fontSize: 10, color: AppTheme.dangerAccent, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
-                        onTap: () => _showSaleDetails(sale),
+                        trailing: Text(
+                          '${isReturn ? '-' : ''}${totalAmount.toStringAsFixed(2)} ₺',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: isReturn ? AppTheme.dangerAccent : AppTheme.primaryAccent),
+                        ),
+                        onTap: () => isReturn ? _showReturnDetails(sale) : _showSaleDetails(sale),
                       );
                     },
                   ),

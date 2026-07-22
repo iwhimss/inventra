@@ -115,15 +115,17 @@ Her gelen istek şu zincirden geçer:
 
 ---
 
-## Server Veritabanı Şeması (18 Tablo)
+## Server Veritabanı Şeması (20 Tablo)
 
 | Tablo | Amaç | Önemli Sütunlar |
 |---|---|---|
 | `products` | Ürün kataloğu (ana barkod) | barcode, name, sale_price, purchase_price, sale_price_2, sale_price_3, stock, critical_stock_level, vat_rate, unit, product_group, is_fast_product, image_path, shelf_location |
 | `product_barcodes` | Çoklu barkod havuzu (alias) — bir ürünün ana barkodu dışındaki ek barkodları | product_id (FK), barcode, created_at |
 | `product_groups` | Ürün kategorileri | name, color |
-| `sales` | Satış başlıkları | total_amount, paid_amount, payment_method, cash_amount, card_amount, cashier_id, discount |
+| `sales` | Satış başlıkları | total_amount, paid_amount, payment_method, cash_amount, card_amount, cashier_id, discount, customer_name |
 | `sale_items` | Satış kalemleri | sale_id, product_id, quantity, unit_price, discount, total_price |
+| `returns` | İade başlıkları (v0.2.0) | sale_id (NULL olabilir — bağımsız iade), total_amount, refund_method (cash/card), staff_id, staff_name |
+| `return_items` | İade kalemleri (v0.2.0) | return_id (FK), product_id, product_name, quantity, unit_price, total_price |
 | `users` | Personel | staff_id (UNIQUE), password_hash (SHA-256), name, role, permissions |
 | `roles` | Yetki rolleri | name, permissions (JSON) |
 | `settings` | Sistem ayarları | key-value çiftleri (işletme adı, KDV, api_key, vb.) |
@@ -138,7 +140,7 @@ Her gelen istek şu zincirden geçer:
 | `label_templates` | Etiket şablonları | name, config (JSON — etiket tasarım verisi) |
 | `events` | Değişiklik olayları | type, table_name, record_id, data, device_id (delta sync için) |
 
-**Migration sistemi** mevcut: 13 migration adımı, `PRAGMA table_info` ile sütun varlığı kontrol edilerek çalışır (destructive değil, additive).
+**Migration sistemi** mevcut: 15 migration adımı, `PRAGMA table_info` ile sütun varlığı kontrol edilerek çalışır (destructive değil, additive).
 
 ---
 
@@ -178,8 +180,9 @@ Her gelen istek şu zincirden geçer:
 | GET | `/api/sales/<id>/items` | Satış kalemlerini getir |
 | DELETE | `/api/sales/<id>` | Satış sil |
 | POST | `/api/sales/clear` | Tüm satışları sil |
+| GET/POST | `/api/returns` | İade listele (sale_id/start/end filtreli) / oluştur (stok otomatik artar, satış bazlı iadelerde miktar aşımı engellenir) |
 | GET | `/api/analytics/today` | Bugünkü ciro + son 50 satış |
-| GET | `/api/reports` | Dönemsel rapor (Günlük/Haftalık/Aylık/Yıllık) |
+| GET | `/api/reports` | Dönemsel rapor (Günlük/Haftalık/Aylık/Yıllık) veya özel `start`/`end` aralığı; ciro/nakit/kart/veresiye/indirim/iade grafiklerini içerir |
 | GET/POST/DELETE | `/api/product-groups` | Grup yönetimi |
 | GET/POST/PUT/DELETE | `/api/users` | Kullanıcı yönetimi |
 | GET/POST/PUT/DELETE | `/api/roles` | Rol yönetimi |
@@ -407,7 +410,7 @@ UI: Dark theme, CSS variables, responsive grid — tamamen Dart string interpola
 | `AutoBackupService` | Excel (.xlsx) ve JSON formatında otomatik yedekleme, `Documents/InventraPOS/` klasörüne |
 | `CartTransferService` | WS üzerinden sepet transferi; dialog, kabul/ret, boş sekmeye aktarma |
 | `SoundService` | Başarı, hata ve bildirim sesleri |
-| `VersionCheckService` | `GET /api/version` ile `min_app_version` uyum kontrolü (ayar web admin panelinden `/admin/settings` üzerinden yönetilir, v0.1.5 ve öncesi cihazlarda bu kontrol koşamaz — manuel güncelleme gerekir) |
+| `VersionCheckService` | `GET /api/version` ile `min_app_version` uyum kontrolü (ayar web admin panelinden `/admin/settings` üzerinden yönetilir, v0.1.5 ve öncesi cihazlarda bu kontrol koşamaz — manuel güncelleme gerekir). v0.2.0'dan itibaren "GÜNCELLE" butonu GitHub Releases API'sinden platforma uygun asset'i (apk/exe/zip) bulup indirir; kurulum otomatik başlatılmaz — bkz. `docs/release-process.md` |
 | `PdfService` | Satış fişi PDF oluşturma |
 | `ReceiptPrinterService` | Termal yazıcı ESC/POS komutları |
 | `ExcelService` | Ürün listesi ve satış verilerini Excel'e aktarma |
@@ -421,10 +424,10 @@ UI: Dark theme, CSS variables, responsive grid — tamamen Dart string interpola
 | `syncProvider` | Sunucu bağlantı durumu, pairStatus, serverUrl, isOnline |
 | `authProvider` | Giriş yapmış kullanıcı, isLoading, error |
 | `productProvider` | Ürün listesi (AsyncValue + cache katmanı) |
-| `cartProvider` | 5 sekmeli sepet, miktarlar, indirimler, ödemeler |
+| `cartProvider` | 5 sekmeli sepet, miktarlar, kümülatif indirim listesi (% ve ₺, sıralı stacking), ödemeler |
 | `analyticsProvider` | Günlük ciro özeti |
-| `reportsProvider` | Dönemsel rapor verileri + chart data |
-| `salesHistoryProvider` | Satış geçmişi + tarih filtresi |
+| `reportsProvider` | Dönemsel rapor verileri + chart data (gün seç / özel aralık desteği, indirim + iade grafikleri dahil) |
+| `salesHistoryProvider` | Satış geçmişi + tarih/saat/tutar/müşteri filtreleri, bağımsız iadelerle birleştirilmiş liste |
 | `cashProvider` | Aktif vardiya + vardiya geçmişi |
 | `customerProvider` | Müşteri listesi |
 | `supplierProvider` | Tedarikçi listesi |

@@ -8,10 +8,11 @@
 
 - **Stok Yönetimi** — Ürün ekleme, düzenleme, kategori ve birim desteği, ondalık miktar/stok takibi, raf konumu takibi (Excel yedeğine ve dönüştürücüye dahil)
 - **Çoklu Barkod** — Bir ürüne birden fazla barkod (alias) tanımlama; tedarikçi barkodu değişse de ürün kaybolmaz
-- **POS Ekranı** — Hızlı satış, sepet, barkod okuma desteği, fiyat teklifi PDF'i
-- **Müşteri & Tedarikçi** — Cari hesap takibi
+- **POS Ekranı** — Hızlı satış, sepet, barkod okuma desteği, fiyat teklifi PDF'i, kümülatif indirim listesi (% ve ₺ üst üste eklenebilir/tek tek kaldırılabilir), toplamı en yakın 10'a yuvarlama
+- **İade Alma** — Geçmiş bir satıştan (tam/kısmi) veya bağımsız olarak ürün iadesi, nakit/kart iade yöntemi seçimi, stok otomatik geri eklenir
+- **Müşteri & Tedarikçi** — Cari hesap takibi; POS'ta satışa isteğe bağlı müşteri ismi ekleme ve Geçmiş İşlemler'de isimle arama
 - **Kasa Yönetimi** — Açılış/kapanış, günlük rapor
-- **Raporlar & Analitik** — Satış grafikleri, stok özeti
+- **Raporlar & Analitik** — Satış/nakit/kart/veresiye/indirim/iade grafikleri, gün seçimi, özel tarih aralığı
 - **Etiket Tasarımcısı** — Özelleştirilebilir ürün etiketi şablonları
 - **Otomatik Yedekleme** — Kullanıcılar, şablonlar, Excel, müşteri verileri
 - **Cihaz Eşleştirme** — QR/IP tabanlı güvenli cihaz pairing sistemi
@@ -181,6 +182,7 @@ inventra/
 ├── docker-compose.yml        # Docker Compose (kalıcı volume dahil)
 ├── docs/
 │   ├── vds-deployment.md     # VDS + Docker kurulum kılavuzu
+│   ├── release-process.md    # GitHub Release asset adlandırma kuralı (otomatik güncelleme için)
 │   └── project-overview.md   # Proje mimarisi detaylı özet
 ├── .plan/                    # Geliştirme planları (versiyon bazlı)
 └── README.md

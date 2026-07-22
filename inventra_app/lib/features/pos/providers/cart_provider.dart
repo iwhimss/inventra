@@ -1,4 +1,4 @@
-﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:inventra_app/features/pos/models/pos_models.dart';
 
@@ -6,30 +6,26 @@ class CartState {
   final int activeTab;
   final List<List<CartItem>> carts;
   final double receivedAmount;
-  final double cartDiscountPercent; // 0-100
-  final double cartDiscountAmount;  // absolute
+  final List<CartDiscountEntry> cartDiscounts;
 
   CartState({
     required this.activeTab,
     required this.carts,
     this.receivedAmount = 0.0,
-    this.cartDiscountPercent = 0,
-    this.cartDiscountAmount = 0,
+    this.cartDiscounts = const [],
   });
 
   CartState copyWith({
     int? activeTab,
     List<List<CartItem>>? carts,
     double? receivedAmount,
-    double? cartDiscountPercent,
-    double? cartDiscountAmount,
+    List<CartDiscountEntry>? cartDiscounts,
   }) {
     return CartState(
       activeTab: activeTab ?? this.activeTab,
       carts: carts ?? this.carts,
       receivedAmount: receivedAmount ?? this.receivedAmount,
-      cartDiscountPercent: cartDiscountPercent ?? this.cartDiscountPercent,
-      cartDiscountAmount: cartDiscountAmount ?? this.cartDiscountAmount,
+      cartDiscounts: cartDiscounts ?? this.cartDiscounts,
     );
   }
 }
@@ -43,26 +39,33 @@ class CartNotifier extends StateNotifier<CartState> {
 
   List<CartItem> get currentCart => state.carts[state.activeTab];
 
-  double get cartDiscountPercent => state.cartDiscountPercent;
-  double get cartDiscountAmount => state.cartDiscountAmount;
+  List<CartDiscountEntry> get cartDiscounts => state.cartDiscounts;
 
   double get subtotal => currentCart.fold(0, (sum, item) => sum + item.price * item.quantity);
 
   double get totalItemDiscount => currentCart.fold(0.0, (sum, item) => sum + item.discount * item.quantity);
 
-  double get totalDiscount {
-    double d = totalItemDiscount + state.cartDiscountAmount;
-    if (state.cartDiscountPercent > 0) {
-      d += (subtotal - totalItemDiscount) * state.cartDiscountPercent / 100;
+  /// Sepet geneli indirimler eklendikleri sırayla, her biri o ana kadar kalan
+  /// tutar üzerinden uygulanır (standart POS "stacking" mantığı).
+  double get cartDiscountTotal {
+    double remaining = (subtotal - totalItemDiscount).clamp(0, double.infinity);
+    double totalCartDiscount = 0;
+    for (final entry in state.cartDiscounts) {
+      final applied = entry.type == 'amount' ? entry.value : remaining * entry.value / 100;
+      final clampedApplied = applied.clamp(0, remaining);
+      totalCartDiscount += clampedApplied;
+      remaining -= clampedApplied;
     }
-    return d;
+    return totalCartDiscount;
   }
+
+  double get totalDiscount => totalItemDiscount + cartDiscountTotal;
 
   double get cartTotal => (subtotal - totalDiscount).clamp(0, double.infinity);
   double get changeAmount => state.receivedAmount > 0 ? (state.receivedAmount - cartTotal).clamp(0, double.infinity) : 0;
 
   void setActiveTab(int index) {
-    state = state.copyWith(activeTab: index, receivedAmount: 0, cartDiscountPercent: 0, cartDiscountAmount: 0);
+    state = state.copyWith(activeTab: index, receivedAmount: 0, cartDiscounts: []);
   }
 
   /// Muhtelif (serbest fiyatlı) ürün ekler.
@@ -120,18 +123,23 @@ class CartNotifier extends StateNotifier<CartState> {
     state = state.copyWith(carts: newCarts);
   }
 
+  /// Ürüne satışa özel fiyat uygular. Orijinal (liste) fiyatı korunur, fark
+  /// satır indirimi olarak kaydedilir — bu sayede özel fiyat toplam indirime
+  /// yansır ve raporlarda/sepette "indirim" olarak görünür.
   void updatePrice(String productId, double newPrice) {
     var newCarts = List<List<CartItem>>.from(state.carts);
     var cart = List<CartItem>.from(newCarts[state.activeTab]);
 
     int index = cart.indexWhere((item) => item.productId == productId);
     if (index != -1) {
+      final originalPrice = cart[index].price;
+      final discount = (originalPrice - newPrice).clamp(0, originalPrice);
       cart[index] = CartItem(
         productId: cart[index].productId,
         productName: cart[index].productName,
-        price: newPrice,
+        price: originalPrice,
         quantity: cart[index].quantity,
-        discount: 0,
+        discount: discount.toDouble(),
       );
     }
 
@@ -153,22 +161,26 @@ class CartNotifier extends StateNotifier<CartState> {
     state = state.copyWith(carts: newCarts);
   }
 
-  void setCartDiscount({double? percent, double? amount}) {
-    state = state.copyWith(
-      cartDiscountPercent: percent ?? state.cartDiscountPercent,
-      cartDiscountAmount: amount ?? state.cartDiscountAmount,
-    );
+  /// Sepet geneline yeni bir kümülatif indirim girişi ekler (% veya ₺).
+  void addCartDiscount({required String type, required double value}) {
+    if (value <= 0) return;
+    final entry = CartDiscountEntry(id: const Uuid().v4(), type: type, value: value);
+    state = state.copyWith(cartDiscounts: [...state.cartDiscounts, entry]);
+  }
+
+  void removeCartDiscount(String id) {
+    state = state.copyWith(cartDiscounts: state.cartDiscounts.where((e) => e.id != id).toList());
   }
 
   void clearCartDiscount() {
-    state = state.copyWith(cartDiscountPercent: 0, cartDiscountAmount: 0);
+    state = state.copyWith(cartDiscounts: []);
   }
 
   void removeItem(String productId) {
     var newCarts = List<List<CartItem>>.from(state.carts);
     var cart = List<CartItem>.from(newCarts[state.activeTab]);
     cart.removeWhere((item) => item.productId == productId);
-    
+
     newCarts[state.activeTab] = cart;
     state = state.copyWith(carts: newCarts);
   }
@@ -188,8 +200,7 @@ class CartNotifier extends StateNotifier<CartState> {
     }).toList();
     return {
       'items': items,
-      'cart_discount_percent': state.cartDiscountPercent,
-      'cart_discount_amount': state.cartDiscountAmount,
+      'cart_discounts': state.cartDiscounts.map((e) => e.toMap()).toList(),
     };
   }
 
@@ -211,16 +222,23 @@ class CartNotifier extends StateNotifier<CartState> {
       discount: (item['discount'] as num?)?.toDouble() ?? 0.0,
     )).toList();
 
+    final discounts = (data['cart_discounts'] as List? ?? [])
+        .map((e) => CartDiscountEntry.fromMap(Map<String, dynamic>.from(e)))
+        .toList();
+
     var newCarts = List<List<CartItem>>.from(state.carts);
     newCarts[emptyIndex] = items;
     state = state.copyWith(carts: newCarts);
+    if (emptyIndex == state.activeTab) {
+      state = state.copyWith(cartDiscounts: discounts);
+    }
     return emptyIndex;
   }
 
   void clearCart() {
     var newCarts = List<List<CartItem>>.from(state.carts);
     newCarts[state.activeTab] = [];
-    state = state.copyWith(carts: newCarts, receivedAmount: 0, cartDiscountPercent: 0, cartDiscountAmount: 0);
+    state = state.copyWith(carts: newCarts, receivedAmount: 0, cartDiscounts: []);
   }
 }
 

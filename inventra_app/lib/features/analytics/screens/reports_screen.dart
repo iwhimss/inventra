@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:inventra_app/core/theme/app_theme.dart';
@@ -28,6 +28,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       case 'cash': return state.cashChartData;
       case 'card': return state.cardChartData;
       case 'veresiye': return state.veresiyeChartData;
+      case 'discount': return state.discountChartData;
+      case 'returns': return state.returnChartData;
       default: return state.revenueChartData;
     }
   }
@@ -38,11 +40,35 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       case 'cash': return AppTheme.warningAccent;
       case 'card': return Colors.blueAccent;
       case 'veresiye': return Colors.deepOrangeAccent;
+      case 'discount': return AppTheme.dangerAccent;
+      case 'returns': return Colors.pinkAccent;
       default: return AppTheme.primaryAccent;
     }
   }
 
+  Future<void> _pickSingleDay() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      ref.read(reportsProvider.notifier).setSingleDay(picked);
+    }
+  }
 
+  Future<void> _pickRange() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      initialDateRange: DateTimeRange(start: DateTime.now().subtract(const Duration(days: 6)), end: DateTime.now()),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      ref.read(reportsProvider.notifier).setCustomRange(picked.start, picked.end);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -75,7 +101,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     child: isMobile ? _buildMobileLayout(state) : _buildDesktopLayout(state),
                   ),
                 ),
-                
+
                 // Loading overlay (subtle)
                 if (state.isLoading)
                   Positioned(
@@ -124,24 +150,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             Expanded(child: _kpiCard('POS (Kart)', '${state.totalCard.toStringAsFixed(2)} ₺', Icons.credit_card, Colors.blueAccent, 'card')),
             const SizedBox(width: 16),
             Expanded(child: _kpiCard('VERESİYE', '${state.totalVeresiye.toStringAsFixed(2)} ₺', Icons.handshake_outlined, Colors.deepOrangeAccent, 'veresiye')),
+            const SizedBox(width: 16),
+            Expanded(child: _kpiCard('İNDİRİM', '${state.totalDiscount.toStringAsFixed(2)} ₺', Icons.percent, AppTheme.dangerAccent, 'discount')),
+            const SizedBox(width: 16),
+            Expanded(child: _kpiCard('İADE', '${state.totalReturns.toStringAsFixed(2)} ₺', Icons.assignment_return, Colors.pinkAccent, 'returns')),
           ],
         ),
         const SizedBox(height: 24),
         Expanded(child: _buildChart(state)),
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 200,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _productRankCard('En Çok Satan', Icons.trending_up, AppTheme.secondaryAccent, state.topProducts, 'total_qty', 'adet')),
-              const SizedBox(width: 12),
-              Expanded(child: _productRankCard('En Az Satan', Icons.trending_down, AppTheme.warningAccent, state.bottomProducts, 'total_qty', 'adet')),
-              const SizedBox(width: 12),
-              Expanded(child: _productRankCard('En Karlı', Icons.monetization_on, AppTheme.primaryAccent, state.profitProducts, 'profit', '₺')),
-            ],
-          ),
-        ),
       ],
     );
   }
@@ -155,7 +171,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           _buildPeriodSelector(state),
           const SizedBox(height: 16),
 
-          // KPI cards — 2x2 grid, fully visible
+          // KPI cards — grid, fully visible
           GridView.count(
             crossAxisCount: 2,
             shrinkWrap: true,
@@ -169,6 +185,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               _kpiCard('NAKİT', '${state.totalCash.toStringAsFixed(2)} ₺', Icons.money, AppTheme.warningAccent, 'cash'),
               _kpiCard('KART', '${state.totalCard.toStringAsFixed(2)} ₺', Icons.credit_card, Colors.blueAccent, 'card'),
               _kpiCard('VERESİYE', '${state.totalVeresiye.toStringAsFixed(2)} ₺', Icons.handshake_outlined, Colors.deepOrangeAccent, 'veresiye'),
+              _kpiCard('İNDİRİM', '${state.totalDiscount.toStringAsFixed(2)} ₺', Icons.percent, AppTheme.dangerAccent, 'discount'),
+              _kpiCard('İADE', '${state.totalReturns.toStringAsFixed(2)} ₺', Icons.assignment_return, Colors.pinkAccent, 'returns'),
             ],
           ),
           const SizedBox(height: 16),
@@ -178,14 +196,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             height: 220,
             child: _buildChart(state),
           ),
-          const SizedBox(height: 16),
-
-          // Product rankings — stacked vertically
-          SizedBox(height: 180, child: _productRankCard('En Çok Satan', Icons.trending_up, AppTheme.secondaryAccent, state.topProducts, 'total_qty', 'adet')),
-          const SizedBox(height: 10),
-          SizedBox(height: 180, child: _productRankCard('En Az Satan', Icons.trending_down, AppTheme.warningAccent, state.bottomProducts, 'total_qty', 'adet')),
-          const SizedBox(height: 10),
-          SizedBox(height: 180, child: _productRankCard('En Karlı', Icons.monetization_on, AppTheme.primaryAccent, state.profitProducts, 'profit', '₺')),
         ],
       ),
     );
@@ -194,6 +204,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   // ─── Shared Widgets ───────────────────────────────────────────
 
   Widget _buildPeriodSelector(ReportsState state) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
     return Wrap(
       alignment: WrapAlignment.spaceBetween,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -201,25 +212,55 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       runSpacing: 12,
       children: [
         Text('Raporlar', style: Theme.of(context).textTheme.displayLarge?.copyWith(
-          fontSize: MediaQuery.of(context).size.width < 600 ? 20 : null,
+          fontSize: isMobile ? 20 : null,
         )),
-        SegmentedButton<String>(
-          segments: const [
-            ButtonSegment(value: 'Günlük', label: Text('Gün', style: TextStyle(fontSize: 12))),
-            ButtonSegment(value: 'Haftalık', label: Text('Hafta', style: TextStyle(fontSize: 12))),
-            ButtonSegment(value: 'Aylık', label: Text('Ay', style: TextStyle(fontSize: 12))),
-            ButtonSegment(value: 'Yıllık', label: Text('Yıl', style: TextStyle(fontSize: 12))),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'Günlük', label: Text('Gün', style: TextStyle(fontSize: 12))),
+                ButtonSegment(value: 'Haftalık', label: Text('Hafta', style: TextStyle(fontSize: 12))),
+                ButtonSegment(value: 'Aylık', label: Text('Ay', style: TextStyle(fontSize: 12))),
+                ButtonSegment(value: 'Yıllık', label: Text('Yıl', style: TextStyle(fontSize: 12))),
+              ],
+              selected: {state.period},
+              onSelectionChanged: (v) { ref.read(reportsProvider.notifier).setPeriod(v.first); },
+              style: SegmentedButton.styleFrom(
+                selectedBackgroundColor: AppTheme.primaryAccent.withOpacity(0.15),
+                selectedForegroundColor: AppTheme.primaryAccent,
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: _pickSingleDay,
+              icon: const Icon(Icons.today, size: 14),
+              label: const Text('Gün Seç', style: TextStyle(fontSize: 12)),
+            ),
+            OutlinedButton.icon(
+              onPressed: _pickRange,
+              icon: const Icon(Icons.date_range, size: 14),
+              label: const Text('Aralık Seç', style: TextStyle(fontSize: 12)),
+            ),
           ],
-          selected: {state.period},
-          onSelectionChanged: (v) { ref.read(reportsProvider.notifier).setPeriod(v.first); },
-          style: SegmentedButton.styleFrom(
-            selectedBackgroundColor: AppTheme.primaryAccent.withOpacity(0.15),
-            selectedForegroundColor: AppTheme.primaryAccent,
-          ),
         ),
+        if (state.customStart != null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(color: AppTheme.primaryAccent.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
+            child: Text(
+              state.customEnd != null && state.customEnd != state.customStart
+                  ? '${_fmt(state.customStart!)} → ${_fmt(state.customEnd!)}'
+                  : _fmt(state.customStart!),
+              style: TextStyle(fontSize: 12, color: AppTheme.primaryAccent, fontWeight: FontWeight.bold),
+            ),
+          ),
       ],
     );
   }
+
+  String _fmt(DateTime d) => '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
 
   Widget _buildChart(ReportsState state) {
     final activeChartData = _getActiveChartData(state);
@@ -348,52 +389,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _productRankCard(String title, IconData icon, Color color, List<Map<String, dynamic>> data, String valueKey, String suffix) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppTheme.panelBackground,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.borderBright),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 6),
-            Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: color)),
-          ]),
-          const Divider(height: 12),
-          Expanded(
-            child: data.isEmpty
-              ? Center(child: Text('Veri yok', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)))
-              : ListView.builder(
-                  itemCount: data.length,
-                  padding: EdgeInsets.zero,
-                  itemBuilder: (ctx, i) {
-                    final item = data[i];
-                    final name = item['name']?.toString() ?? 'Ürün';
-                    final val = (item[valueKey] as num?)?.toDouble() ?? 0;
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Row(
-                        children: [
-                          Text('${i + 1}.', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                          const SizedBox(width: 6),
-                          Expanded(child: Text(name, style: const TextStyle(fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                          Text('${val.toStringAsFixed(suffix == '₺' ? 2 : 0)} $suffix', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: color)),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-          ),
-        ],
       ),
     );
   }

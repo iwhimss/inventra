@@ -39,6 +39,24 @@ class CartItem {
   }
 }
 
+/// Sepet geneli kümülatif indirim girişi — % veya ₺, eklenme sırasıyla
+/// üst üste (stacking) uygulanır.
+class CartDiscountEntry {
+  final String id;
+  final String type; // 'percent' | 'amount'
+  final double value;
+
+  CartDiscountEntry({required this.id, required this.type, required this.value});
+
+  Map<String, dynamic> toMap() => {'id': id, 'type': type, 'value': value};
+
+  factory CartDiscountEntry.fromMap(Map<String, dynamic> map) => CartDiscountEntry(
+        id: map['id']?.toString() ?? '',
+        type: map['type']?.toString() ?? 'amount',
+        value: (map['value'] as num?)?.toDouble() ?? 0.0,
+      );
+}
+
 class PendingSaleEvent {
   final String id;
   final String type;

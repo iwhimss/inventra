@@ -31,6 +31,7 @@ import 'package:inventra_app/features/receipt/services/receipt_printer_service.d
 import 'package:inventra_app/features/auth/providers/auth_provider.dart';
 import 'package:inventra_app/core/utils/responsive_utils.dart';
 import 'package:inventra_app/core/utils/string_utils.dart';
+import 'package:inventra_app/features/pos/screens/return_screen.dart';
 
 class PosScreen extends ConsumerStatefulWidget {
   const PosScreen({super.key});
@@ -42,6 +43,7 @@ class PosScreen extends ConsumerStatefulWidget {
 class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _receivedAmountController = TextEditingController();
+  final TextEditingController _customerNameController = TextEditingController();
   bool _showQuickProducts = true;
   TabController? _mobileTabController;
   Customer? _selectedCustomer;
@@ -87,6 +89,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
     _receivedAmountController.dispose();
+    _customerNameController.dispose();
     _mobileTabController?.dispose();
     _suggestionTimer?.cancel();
     _posSearchDebounce?.cancel();
@@ -115,6 +118,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
         'device_id': 'FLUTTER_CLIENT',
         'cashier_name': ApiClient.instance.userName ?? '',
         'cashier_id': ref.read(authProvider).currentUser?.id ?? '',
+        'customer_name': _customerNameController.text.trim(),
         'items': cartNotifier.currentCart.map((item) => item.toMap()).toList(),
       },
     );
@@ -148,6 +152,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
       }
       cartNotifier.clearCart();
       _receivedAmountController.clear();
+      _customerNameController.clear();
       setState(() => _selectedCustomer = null);
       SoundService.playSuccess();
       // Refresh product stock levels in the UI
@@ -426,71 +431,108 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
   }
 
   void _showCartDiscountDialog(CartNotifier cartNotifier) {
-    final percentCtrl = TextEditingController(text: cartNotifier.cartDiscountPercent > 0 ? cartNotifier.cartDiscountPercent.toString() : '');
-    final amountCtrl = TextEditingController(text: cartNotifier.cartDiscountAmount > 0 ? cartNotifier.cartDiscountAmount.toString() : '');
-    String activeField = cartNotifier.cartDiscountPercent > 0 ? 'percent' : (cartNotifier.cartDiscountAmount > 0 ? 'amount' : '');
-    double previewAmount = 0;
+    final valueCtrl = TextEditingController();
+    String newEntryType = 'amount'; // 'amount' | 'percent'
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-          // Calculate preview
-          if (activeField == 'percent') {
-            final pct = double.tryParse(percentCtrl.text) ?? 0;
-            previewAmount = cartNotifier.subtotal * pct / 100;
-          } else if (activeField == 'amount') {
-            previewAmount = double.tryParse(amountCtrl.text) ?? 0;
-          }
+          final entries = cartNotifier.cartDiscounts;
           return AlertDialog(
             scrollable: true,
             title: const Text('Sepet İndirimi'),
             content: SizedBox(
-              width: context.dialogWidth(300),
+              width: context.dialogWidth(320),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextField(
-                    controller: percentCtrl,
-                    decoration: InputDecoration(labelText: 'Yüzde İndirim (%)', isDense: true, prefixIcon: Icon(Icons.percent, size: 18)),
-                    keyboardType: TextInputType.number,
-                    enabled: activeField != 'amount',
-                    onChanged: (v) => setDialogState(() { activeField = v.isNotEmpty ? 'percent' : ''; amountCtrl.clear(); }),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: amountCtrl,
-                    decoration: InputDecoration(labelText: 'Tutar İndirim (₺)', isDense: true, prefixIcon: Icon(Icons.money_off, size: 18)),
-                    keyboardType: TextInputType.number,
-                    enabled: activeField != 'percent',
-                    onChanged: (v) => setDialogState(() { activeField = v.isNotEmpty ? 'amount' : ''; percentCtrl.clear(); }),
-                  ),
-                  if (previewAmount > 0) ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: AppTheme.dangerAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                  if (entries.isNotEmpty) ...[
+                    Text('Uygulanan İndirimler', style: TextStyle(color: AppTheme.textMuted, fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    ...entries.map((e) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('İndirim Tutarı:', style: TextStyle(color: AppTheme.dangerAccent, fontSize: 12)),
-                          Text('-${previewAmount.toStringAsFixed(2)} ₺', style: TextStyle(color: AppTheme.dangerAccent, fontWeight: FontWeight.bold)),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(color: AppTheme.dangerAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+                            child: Text(
+                              e.type == 'percent' ? '%${e.value.toStringAsFixed(e.value % 1 == 0 ? 0 : 2)}' : '${e.value.toStringAsFixed(2)} ₺',
+                              style: TextStyle(color: AppTheme.dangerAccent, fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                          ),
+                          const Spacer(),
+                          InkWell(
+                            onTap: () { cartNotifier.removeCartDiscount(e.id); setDialogState(() {}); },
+                            child: Icon(Icons.close, size: 18, color: AppTheme.textMuted),
+                          ),
                         ],
                       ),
-                    ),
+                    )),
+                    const Divider(height: 20),
                   ],
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: valueCtrl,
+                          decoration: InputDecoration(
+                            labelText: newEntryType == 'percent' ? 'Yüzde (%)' : 'Tutar (₺)',
+                            isDense: true,
+                            prefixIcon: Icon(newEntryType == 'percent' ? Icons.percent : Icons.money_off, size: 18),
+                          ),
+                          keyboardType: TextInputType.number,
+                          autofocus: true,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SegmentedButton<String>(
+                        segments: const [
+                          ButtonSegment(value: 'amount', label: Text('₺', style: TextStyle(fontSize: 12))),
+                          ButtonSegment(value: 'percent', label: Text('%', style: TextStyle(fontSize: 12))),
+                        ],
+                        selected: {newEntryType},
+                        onSelectionChanged: (v) => setDialogState(() => newEntryType = v.first),
+                        showSelectedIcon: false,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        final val = double.tryParse(valueCtrl.text.replaceAll(',', '.')) ?? 0;
+                        if (val > 0) {
+                          cartNotifier.addCartDiscount(type: newEntryType, value: val);
+                          valueCtrl.clear();
+                          setDialogState(() {});
+                        }
+                      },
+                      icon: const Icon(Icons.add, size: 16),
+                      label: const Text('EKLE'),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: AppTheme.dangerAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Toplam Sepet İndirimi:', style: TextStyle(color: AppTheme.dangerAccent, fontSize: 12)),
+                        Text('-${cartNotifier.cartDiscountTotal.toStringAsFixed(2)} ₺', style: TextStyle(color: AppTheme.dangerAccent, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
             actions: [
-              TextButton(onPressed: () { cartNotifier.clearCartDiscount(); Navigator.pop(ctx); }, child: Text('Kaldır', style: TextStyle(color: AppTheme.dangerAccent))),
-              TextButton(onPressed: () => Navigator.pop(ctx), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
-              ElevatedButton(onPressed: () {
-                cartNotifier.setCartDiscount(
-                  percent: activeField == 'percent' ? (double.tryParse(percentCtrl.text) ?? 0) : 0,
-                  amount: activeField == 'amount' ? (double.tryParse(amountCtrl.text) ?? 0) : 0,
-                );
-                Navigator.pop(ctx);
-              }, child: const Text('UYGULA')),
+              if (entries.isNotEmpty)
+                TextButton(onPressed: () { cartNotifier.clearCartDiscount(); setDialogState(() {}); }, child: Text('Tümünü Kaldır', style: TextStyle(color: AppTheme.dangerAccent))),
+              ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('TAMAM')),
             ],
           );
         },
@@ -1045,14 +1087,14 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                   ),
                 ),
                 // Cart discount
-                if (cartNotifier.cartDiscountPercent > 0 || cartNotifier.cartDiscountAmount > 0)
+                if (cartNotifier.cartDiscounts.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 2),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Sepet indirimi', style: TextStyle(color: AppTheme.dangerAccent, fontSize: 11)),
-                        Text('-${(cartNotifier.totalDiscount - cartNotifier.currentCart.fold(0.0, (sum, i) => sum + i.discount * i.quantity)).toStringAsFixed(2)} ₺', style: TextStyle(fontSize: 12, color: AppTheme.dangerAccent)),
+                        Text('Sepet indirimi (${cartNotifier.cartDiscounts.length})', style: TextStyle(color: AppTheme.dangerAccent, fontSize: 11)),
+                        Text('-${cartNotifier.cartDiscountTotal.toStringAsFixed(2)} ₺', style: TextStyle(fontSize: 12, color: AppTheme.dangerAccent)),
                       ],
                     ),
                   ),
@@ -1128,6 +1170,22 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                           child: Text(cartNotifier.totalDiscount > 0 ? 'İndirim ✓' : '% İndirim', style: TextStyle(fontSize: 12, color: AppTheme.dangerAccent, fontWeight: cartNotifier.totalDiscount > 0 ? FontWeight.bold : FontWeight.normal)),
                         ),
                       ),
+                      if (cartNotifier.cartTotal >= 10 && (cartNotifier.cartTotal - (cartNotifier.cartTotal / 10).floor() * 10) > 0.009)
+                        InkWell(
+                          onTap: () {
+                            final total = cartNotifier.cartTotal;
+                            final rounded = (total / 10).floor() * 10.0;
+                            final diff = total - rounded;
+                            if (diff > 0.009) {
+                              cartNotifier.addCartDiscount(type: 'amount', value: diff);
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(color: AppTheme.secondaryAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppTheme.secondaryAccent.withOpacity(0.3))),
+                            child: Text('Yuvarla (${((cartNotifier.cartTotal / 10).floor() * 10.0).toStringAsFixed(0)} ₺)', style: TextStyle(fontSize: 12, color: AppTheme.secondaryAccent, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
                       const SizedBox(width: 8),
                       InkWell(
                         onTap: () async {
@@ -1201,10 +1259,26 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                           ),
                         ),
                       ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReturnScreen())),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(color: AppTheme.dangerAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppTheme.dangerAccent.withOpacity(0.3))),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.assignment_return, color: AppTheme.dangerAccent, size: 14),
+                              const SizedBox(width: 4),
+                              Text('İade Al', style: TextStyle(fontSize: 12, color: AppTheme.dangerAccent)),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
-              
+
               // Total Row
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1279,6 +1353,15 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                   }).toList(),
                 ),
                 const SizedBox(height: 12),
+                TextField(
+                  controller: _customerNameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Müşteri İsmi (opsiyonel)',
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 // Selected customer chip
                 if (_selectedCustomer != null)
                   Container(
@@ -1534,18 +1617,22 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
       },
     );
 
-    final segmentedBtn = SegmentedButton<bool>(
-      segments: const [
-        ButtonSegment(value: true, label: Text('Hızlı', style: TextStyle(fontSize: 12))),
-        ButtonSegment(value: false, label: Text('Tümü', style: TextStyle(fontSize: 12))),
-      ],
-      selected: {_showQuickProducts},
-      onSelectionChanged: (val) => setState(() => _showQuickProducts = val.first),
-      style: SegmentedButton.styleFrom(
-        selectedBackgroundColor: AppTheme.primaryAccent.withOpacity(0.15),
-        selectedForegroundColor: AppTheme.primaryAccent,
-      ),
-    );
+    // Hiç hızlı ürün işaretlenmemişse "Hızlı" sekmesi hiç gösterilmez, liste direkt "Tümü" moduna düşer.
+    final hasFastProducts = productsState.valueOrNull?.any((p) => p.isFastProduct == true) ?? false;
+    final segmentedBtn = hasFastProducts
+        ? SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: true, label: Text('Hızlı', style: TextStyle(fontSize: 12))),
+              ButtonSegment(value: false, label: Text('Tümü', style: TextStyle(fontSize: 12))),
+            ],
+            selected: {_showQuickProducts},
+            onSelectionChanged: (val) => setState(() => _showQuickProducts = val.first),
+            style: SegmentedButton.styleFrom(
+              selectedBackgroundColor: AppTheme.primaryAccent.withOpacity(0.15),
+              selectedForegroundColor: AppTheme.primaryAccent,
+            ),
+          )
+        : const SizedBox.shrink();
 
     // Masaüstü: tam etiketli Muhtelif butonu
     final miscBtnDesktop = InkWell(
@@ -1597,8 +1684,10 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
               ? Row(
                   children: [
                     Expanded(child: searchField),
-                    const SizedBox(width: 8),
-                    segmentedBtn,
+                    if (hasFastProducts) ...[
+                      const SizedBox(width: 8),
+                      segmentedBtn,
+                    ],
                     const SizedBox(width: 8),
                     miscBtnDesktop,
                   ],
@@ -1613,8 +1702,10 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                         miscBtnMobile,
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    SizedBox(width: double.infinity, child: segmentedBtn),
+                    if (hasFastProducts) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(width: double.infinity, child: segmentedBtn),
+                    ],
                   ],
                 ),
         ),
@@ -1626,6 +1717,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
             data: (products) {
               final query = _searchController.text.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
               final barcodeIndex = ref.watch(productBarcodeProvider);
+              final effectiveShowQuick = _showQuickProducts && hasFastProducts;
               var filtered = products.where((p) {
                 final nName = p.name.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
                 final nBarcode = p.barcode.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
@@ -1648,24 +1740,24 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                   final words = query.split(' ').where((w) => w.length >= 2).toList();
                   if (words.isNotEmpty && words.every((w) => nName.contains(w))) matchesSearch = true;
                 }
-                if (_showQuickProducts && query.isEmpty) {
+                if (effectiveShowQuick && query.isEmpty) {
                   return p.isFastProduct == true;
                 }
                 return matchesSearch;
               }).toList();
 
               if (filtered.isEmpty) {
-                final suggestion = (!_showQuickProducts && query.isNotEmpty)
+                final suggestion = (!effectiveShowQuick && query.isNotEmpty)
                     ? _posSuggestion
                     : null;
                 return Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(_showQuickProducts ? Icons.flash_off : Icons.search_off, size: 48, color: AppTheme.borderBright),
+                      Icon(effectiveShowQuick ? Icons.flash_off : Icons.search_off, size: 48, color: AppTheme.borderBright),
                       const SizedBox(height: 8),
                       Text(
-                        _showQuickProducts ? "Hızlı ürün eklenmemiş.\nÜrünler sekmesinden 'Hızlı Ürün' işaretleyebilirsiniz." : "Ürün Bulunamadı.",
+                        effectiveShowQuick ? "Hızlı ürün eklenmemiş.\nÜrünler sekmesinden 'Hızlı Ürün' işaretleyebilirsiniz." : "Ürün Bulunamadı.",
                         textAlign: TextAlign.center,
                         style: TextStyle(color: AppTheme.textMuted),
                       ),
@@ -1870,10 +1962,24 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
       ApiClient.instance.setDeviceId(selfId);
     }
 
+    // Eşleme sırasında admin panelinden verilen gerçek cihaz adını kullan
+    // (sabit "Windows Kasa"/"Mobil Kasa" yerine — bkz. paired_devices.device_name)
+    String senderName = Platform.isWindows ? 'Windows Kasa' : 'Mobil Kasa';
+    try {
+      final devicesResp = await ApiClient.instance.get('/api/pair/devices');
+      if (devicesResp.success && devicesResp.data?['data'] != null) {
+        final devices = (devicesResp.data!['data'] as List).map((e) => Map<String, dynamic>.from(e)).toList();
+        final self = devices.where((d) => d['device_id'] == selfId).toList();
+        if (self.isNotEmpty && (self.first['device_name']?.toString() ?? '').isNotEmpty) {
+          senderName = self.first['device_name'].toString();
+        }
+      }
+    } catch (_) {}
+
     try {
       final resp = await ApiClient.instance.post('/api/cart/transfer', {
         'sender_device_id': selfId,
-        'sender_name': Platform.isWindows ? 'Windows Kasa' : 'Mobil Kasa',
+        'sender_name': senderName,
         'target_device_id': targetDevice['device_id'],
         'cart_data': cartData,
       });

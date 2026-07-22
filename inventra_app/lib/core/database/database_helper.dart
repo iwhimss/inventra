@@ -87,8 +87,8 @@ class DatabaseHelper {
     final path = join(dbPath, filePath);
 
     return await openDatabase(
-      path, 
-      version: 17,
+      path,
+      version: 18,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON');
       },
@@ -283,6 +283,35 @@ class DatabaseHelper {
           // Raf sistemi: ürünün fiziksel raf konumu (ör. "A1")
           try { await db.execute("ALTER TABLE products ADD COLUMN shelf_location TEXT DEFAULT ''"); } catch (_) {}
         }
+        if (oldVersion < 18) {
+          // v0.2.0: satışa isteğe bağlı müşteri ismi + iade edilen tutar (cache)
+          try { await db.execute("ALTER TABLE sales ADD COLUMN customer_name TEXT DEFAULT ''"); } catch (_) {}
+          try { await db.execute("ALTER TABLE sales ADD COLUMN returned_amount REAL DEFAULT 0"); } catch (_) {}
+          // v0.2.0: iade alma sistemi — returns / return_items cache tabloları
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS returns (
+              id TEXT PRIMARY KEY,
+              sale_id TEXT,
+              total_amount REAL NOT NULL DEFAULT 0,
+              refund_method TEXT NOT NULL DEFAULT 'cash',
+              staff_id TEXT,
+              staff_name TEXT,
+              note TEXT,
+              created_at TEXT
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS return_items (
+              id TEXT PRIMARY KEY,
+              return_id TEXT NOT NULL,
+              product_id TEXT,
+              product_name TEXT,
+              quantity REAL NOT NULL DEFAULT 0,
+              unit_price REAL NOT NULL DEFAULT 0,
+              total_price REAL NOT NULL DEFAULT 0
+            )
+          ''');
+        }
       },
     );
   }
@@ -330,7 +359,35 @@ class DatabaseHelper {
       discount_amount $realType DEFAULT 0,
       status $textType,
       device_id $textType,
+      customer_name $textNullable,
+      returned_amount REAL DEFAULT 0,
       created_at $textType
+    )
+    ''');
+
+    // Returns Table (v0.2.0 iade sistemi)
+    await db.execute('''
+    CREATE TABLE returns (
+      id $idType,
+      sale_id $textNullable,
+      total_amount $realType DEFAULT 0,
+      refund_method $textNullable,
+      staff_id $textNullable,
+      staff_name $textNullable,
+      note $textNullable,
+      created_at $textNullable
+    )
+    ''');
+
+    await db.execute('''
+    CREATE TABLE return_items (
+      id $idType,
+      return_id $textType,
+      product_id $textNullable,
+      product_name $textNullable,
+      quantity $realType DEFAULT 0,
+      unit_price $realType DEFAULT 0,
+      total_price $realType DEFAULT 0
     )
     ''');
 

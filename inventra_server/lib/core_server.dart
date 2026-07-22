@@ -121,6 +121,10 @@ class CoreServer {
     _router.delete('/api/sales/<id>', _handleDeleteSale);
     _router.post('/api/sales/clear', _handleClearSales);
 
+    // ─── İade Alma (Returns) ─────────────────────────────────
+    _router.get('/api/returns', _handleGetReturns);
+    _router.post('/api/returns', _handleCreateReturn);
+
     // ─── Analytics ──────────────────────────────────────────
     _router.get('/api/analytics/today', _handleAnalyticsToday);
     _router.get('/api/reports', _handleReports);
@@ -497,7 +501,52 @@ class CoreServer {
 
   Response _handleGetSales(Request request) {
     try {
-      final rows = _db.queryAll('sales', orderBy: 'created_at DESC');
+      final qp = request.url.queryParameters;
+      final start = qp['start'];
+      final end = qp['end'];
+      final minTotal = double.tryParse(qp['min_total'] ?? '');
+      final maxTotal = double.tryParse(qp['max_total'] ?? '');
+      final customerName = qp['customer_name'];
+
+      final where = <String>[];
+      final args = <Object?>[];
+      if (start != null && start.isNotEmpty) {
+        where.add('created_at >= ?');
+        args.add(start);
+      }
+      if (end != null && end.isNotEmpty) {
+        // Client 'end' değerini exclusive üst sınır (bir sonraki günün başlangıcı) olarak gönderir
+        where.add('created_at < ?');
+        args.add(end);
+      }
+      if (minTotal != null) {
+        where.add('total_amount >= ?');
+        args.add(minTotal);
+      }
+      if (maxTotal != null) {
+        where.add('total_amount <= ?');
+        args.add(maxTotal);
+      }
+      if (customerName != null && customerName.isNotEmpty) {
+        where.add('customer_name LIKE ?');
+        args.add('%$customerName%');
+      }
+
+      final sql = 'SELECT * FROM sales'
+          '${where.isNotEmpty ? ' WHERE ${where.join(' AND ')}' : ''}'
+          ' ORDER BY created_at DESC';
+      final rows = _db.query(sql, args);
+
+      // İade edilen tutarları toplu çek (satış başına)
+      final returnTotals = <String, double>{};
+      try {
+        for (final r in _db.query(
+            "SELECT sale_id, SUM(total_amount) as total FROM returns WHERE sale_id IS NOT NULL GROUP BY sale_id")) {
+          final sid = r['sale_id']?.toString();
+          if (sid != null) returnTotals[sid] = (r['total'] as num?)?.toDouble() ?? 0.0;
+        }
+      } catch (_) {}
+
       // Sütun isimlerini istemci beklentisine çevir
       final normalized = rows.map((row) {
         final m = Map<String, dynamic>.from(row);
@@ -506,6 +555,7 @@ class CoreServer {
         m['status'] = 'completed'; // sunucuda zaten kaydedildiyse tamamlanmıştır
         m['staff_id'] = m.remove('cashier_id') ?? '';
         m['staff_name'] = m.remove('cashier_name') ?? '';
+        m['returned_amount'] = returnTotals[m['id']?.toString()] ?? 0.0;
         return m;
       }).toList();
       return _jsonOk({'success': true, 'data': normalized});
@@ -1033,6 +1083,7 @@ class CoreServer {
         'cashier_name': body['cashier_name'] ?? '',
         'discount': body['discount_amount'] ?? body['discount'] ?? 0.0,
         'note': body['note'] ?? '',
+        'customer_name': body['customer_name'] ?? '',
         'created_at': now,
       });
 
@@ -1115,6 +1166,142 @@ class CoreServer {
     }
   }
 
+  // ─── İade Alma (Returns) ──────────────────────────────────────
+
+  Response _handleGetReturns(Request request) {
+    try {
+      final qp = request.url.queryParameters;
+      final saleId = qp['sale_id'];
+      final start = qp['start'];
+      final end = qp['end'];
+
+      final where = <String>[];
+      final args = <Object?>[];
+      if (saleId != null && saleId.isNotEmpty) {
+        where.add('r.sale_id = ?');
+        args.add(saleId);
+      }
+      if (start != null && start.isNotEmpty) {
+        where.add('r.created_at >= ?');
+        args.add(start);
+      }
+      if (end != null && end.isNotEmpty) {
+        where.add('r.created_at < ?');
+        args.add(end);
+      }
+
+      final rows = _db.query('''
+        SELECT r.* FROM returns r
+        ${where.isNotEmpty ? 'WHERE ${where.join(' AND ')}' : ''}
+        ORDER BY r.created_at DESC
+      ''', args);
+
+      final result = rows.map((row) {
+        final m = Map<String, dynamic>.from(row);
+        final items = _db.query('SELECT * FROM return_items WHERE return_id = ?', [m['id']]);
+        m['items'] = items;
+        return m;
+      }).toList();
+
+      return _jsonOk({'success': true, 'data': result});
+    } catch (e) {
+      return _jsonError(e.toString());
+    }
+  }
+
+  Future<Response> _handleCreateReturn(Request request) async {
+    try {
+      final body = await _readBody(request);
+      final saleId = body['sale_id']?.toString();
+      final items = body['items'] as List? ?? [];
+      final refundMethod = (body['refund_method']?.toString() ?? 'cash') == 'card' ? 'card' : 'cash';
+
+      if (items.isEmpty) {
+        return _jsonError('İade edilecek ürün listesi gerekli', code: 400);
+      }
+
+      // Satışa bağlı iadelerde, satılan miktarı aşan iadeyi engelle
+      Map<String, num> alreadyReturned = {};
+      Map<String, num> soldQty = {};
+      if (saleId != null && saleId.isNotEmpty) {
+        final soldRows = _db.query(
+          'SELECT product_id, SUM(quantity) as qty FROM sale_items WHERE sale_id = ? GROUP BY product_id',
+          [saleId],
+        );
+        for (final r in soldRows) {
+          soldQty[r['product_id']?.toString() ?? ''] = (r['qty'] as num?) ?? 0;
+        }
+        final returnedRows = _db.query('''
+          SELECT ri.product_id, SUM(ri.quantity) as qty
+          FROM return_items ri JOIN returns r ON ri.return_id = r.id
+          WHERE r.sale_id = ? GROUP BY ri.product_id
+        ''', [saleId]);
+        for (final r in returnedRows) {
+          alreadyReturned[r['product_id']?.toString() ?? ''] = (r['qty'] as num?) ?? 0;
+        }
+
+        for (final item in items) {
+          final pid = item['product_id']?.toString() ?? '';
+          final qty = (item['quantity'] as num?) ?? 0;
+          final sold = soldQty[pid] ?? 0;
+          final already = alreadyReturned[pid] ?? 0;
+          final remaining = sold - already;
+          if (qty > remaining) {
+            return _jsonError('Bu üründen en fazla ${remaining.clamp(0, double.infinity)} adet iade edilebilir.', code: 400);
+          }
+        }
+      }
+
+      final returnId = const Uuid().v4();
+      final now = DateTime.now().toIso8601String();
+      double totalAmount = 0;
+      for (final item in items) {
+        final qty = (item['quantity'] as num?) ?? 0;
+        final unitPrice = (item['unit_price'] as num?) ?? 0;
+        totalAmount += qty.toDouble() * unitPrice.toDouble();
+      }
+
+      _db.insert('returns', {
+        'id': returnId,
+        'sale_id': saleId,
+        'total_amount': totalAmount,
+        'refund_method': refundMethod,
+        'staff_id': body['staff_id'] ?? '',
+        'staff_name': body['staff_name'] ?? '',
+        'note': body['note'] ?? '',
+        'created_at': now,
+      });
+
+      for (final item in items) {
+        final pid = item['product_id']?.toString();
+        final qty = (item['quantity'] as num?) ?? 0;
+        final unitPrice = (item['unit_price'] as num?) ?? 0;
+        _db.insert('return_items', {
+          'id': const Uuid().v4(),
+          'return_id': returnId,
+          'product_id': pid,
+          'product_name': item['product_name'] ?? '',
+          'quantity': qty,
+          'unit_price': unitPrice,
+          'total_price': qty.toDouble() * unitPrice.toDouble(),
+        });
+
+        // İade edilen ürünü stoğa geri ekle
+        if (pid != null && pid.isNotEmpty) {
+          _db.execute('UPDATE products SET stock = stock + ? WHERE id = ?', [qty, pid]);
+        }
+      }
+
+      _logActivity('İade', 'return_create',
+          'İade alındı. Tutar: ₺${totalAmount.toStringAsFixed(2)} ($refundMethod)${saleId != null ? ' — Satış #${saleId.substring(0, 8)}' : ' — Bağımsız'}',
+          userName: body['staff_name']?.toString());
+
+      return _jsonOk({'success': true, 'id': returnId, 'total_amount': totalAmount});
+    } catch (e) {
+      return _jsonError(e.toString());
+    }
+  }
+
   // ─── Analytics ──────────────────────────────────────────────
 
   Response _handleAnalyticsToday(Request request) {
@@ -1136,143 +1323,178 @@ class CoreServer {
 
   Response _handleReports(Request request) {
     try {
-      final period = request.url.queryParameters['period'] ?? 'Günlük';
+      final qp = request.url.queryParameters;
+      final period = qp['period'] ?? 'Günlük';
+      final customStart = qp['start'];
+      final customEnd = qp['end'];
 
-      String dateFilter;
-      int dayCount;
-      switch (period) {
-        case 'Haftalık':
-          dateFilter = DateTime.now().subtract(const Duration(days: 7)).toIso8601String();
-          dayCount = 7;
-          break;
-        case 'Aylık':
-          dateFilter = DateTime.now().subtract(const Duration(days: 30)).toIso8601String();
-          dayCount = 30;
-          break;
-        case 'Yıllık':
-          dateFilter = DateTime.now().subtract(const Duration(days: 365)).toIso8601String();
-          dayCount = 365;
-          break;
-        default:
-          dateFilter = DateTime.now().toIso8601String().substring(0, 10);
-          dayCount = 1;
+      // rangeStart (inclusive) / rangeEndExclusive (exclusive üst sınır) + gruplama modu
+      DateTime rangeStart;
+      DateTime rangeEndExclusive;
+      String groupMode; // 'hour' | 'day' | 'month'
+
+      if (customStart != null && customStart.isNotEmpty) {
+        final startD = DateTime.parse(customStart.substring(0, 10));
+        final endD = (customEnd != null && customEnd.isNotEmpty) ? DateTime.parse(customEnd.substring(0, 10)) : startD;
+        rangeStart = startD;
+        rangeEndExclusive = endD.add(const Duration(days: 1));
+        final dayCount = rangeEndExclusive.difference(rangeStart).inDays;
+        groupMode = dayCount <= 1 ? 'hour' : 'day';
+      } else {
+        final now = DateTime.now();
+        switch (period) {
+          case 'Haftalık':
+            rangeStart = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 6));
+            rangeEndExclusive = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+            groupMode = 'day';
+            break;
+          case 'Aylık':
+            rangeStart = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 29));
+            rangeEndExclusive = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+            groupMode = 'day';
+            break;
+          case 'Yıllık':
+            rangeStart = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 364));
+            rangeEndExclusive = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+            groupMode = 'month';
+            break;
+          default:
+            rangeStart = DateTime(now.year, now.month, now.day);
+            rangeEndExclusive = rangeStart.add(const Duration(days: 1));
+            groupMode = 'hour';
+        }
       }
 
-      final totalQuery = period == 'Günlük'
-          ? "SELECT COALESCE(SUM(total_amount),0) as total, COUNT(*) as cnt FROM sales WHERE created_at LIKE ?"
-          : "SELECT COALESCE(SUM(total_amount),0) as total, COUNT(*) as cnt FROM sales WHERE created_at >= ?";
-      final totalArg = period == 'Günlük' ? '$dateFilter%' : dateFilter;
-      final totalResult = _db.query(totalQuery, [totalArg]);
+      final startArg = rangeStart.toIso8601String();
+      final endArg = rangeEndExclusive.toIso8601String();
+
+      final totalResult = _db.query(
+        "SELECT COALESCE(SUM(total_amount),0) as total, COUNT(*) as cnt, COALESCE(SUM(discount),0) as discount "
+        "FROM sales WHERE created_at >= ? AND created_at < ?",
+        [startArg, endArg],
+      );
       final totalRevenue = (totalResult.first['total'] as num?)?.toDouble() ?? 0.0;
       final totalSalesCount = (totalResult.first['cnt'] as num?)?.toInt() ?? 0;
+      final totalDiscount = (totalResult.first['discount'] as num?)?.toDouble() ?? 0.0;
 
-      final ccQuery = period == 'Günlük'
-          ? "SELECT COALESCE(SUM(cash_amount),0) as cash, COALESCE(SUM(card_amount),0) as card FROM sales WHERE created_at LIKE ?"
-          : "SELECT COALESCE(SUM(cash_amount),0) as cash, COALESCE(SUM(card_amount),0) as card FROM sales WHERE created_at >= ?";
-      final ccResult = _db.query(ccQuery, [totalArg]);
-      final totalCash = (ccResult.first['cash'] as num?)?.toDouble() ?? 0.0;
-      final totalCard = (ccResult.first['card'] as num?)?.toDouble() ?? 0.0;
+      final ccResult = _db.query(
+        "SELECT COALESCE(SUM(cash_amount),0) as cash, COALESCE(SUM(card_amount),0) as card "
+        "FROM sales WHERE created_at >= ? AND created_at < ?",
+        [startArg, endArg],
+      );
+      double totalCash = (ccResult.first['cash'] as num?)?.toDouble() ?? 0.0;
+      double totalCard = (ccResult.first['card'] as num?)?.toDouble() ?? 0.0;
 
-      final verQuery = period == 'Günlük'
-          ? "SELECT COALESCE(SUM(total_amount),0) as veresiye FROM sales WHERE payment_method = 'VERESİYE' AND created_at LIKE ?"
-          : "SELECT COALESCE(SUM(total_amount),0) as veresiye FROM sales WHERE payment_method = 'VERESİYE' AND created_at >= ?";
-      final verResult = _db.query(verQuery, [totalArg]);
+      final verResult = _db.query(
+        "SELECT COALESCE(SUM(total_amount),0) as veresiye FROM sales "
+        "WHERE payment_method = 'VERESİYE' AND created_at >= ? AND created_at < ?",
+        [startArg, endArg],
+      );
       final totalVeresiye = (verResult.first['veresiye'] as num?)?.toDouble() ?? 0.0;
+
+      double totalReturns = 0.0;
+      try {
+        final retResult = _db.query(
+          "SELECT COALESCE(SUM(total_amount),0) as total, "
+          "COALESCE(SUM(CASE WHEN refund_method='cash' THEN total_amount ELSE 0 END),0) as cash_ret, "
+          "COALESCE(SUM(CASE WHEN refund_method='card' THEN total_amount ELSE 0 END),0) as card_ret "
+          "FROM returns WHERE created_at >= ? AND created_at < ?",
+          [startArg, endArg],
+        );
+        totalReturns = (retResult.first['total'] as num?)?.toDouble() ?? 0.0;
+        totalCash -= (retResult.first['cash_ret'] as num?)?.toDouble() ?? 0.0;
+        totalCard -= (retResult.first['card_ret'] as num?)?.toDouble() ?? 0.0;
+      } catch (_) {}
 
       List<double> revenueChart = [];
       List<double> countChart = [];
       List<double> cashChart = [];
       List<double> cardChart = [];
       List<double> veresiyeChart = [];
+      List<double> discountChart = [];
+      List<double> returnChart = [];
       List<String> chartLabels = [];
 
-      // Tek GROUP BY sorgusu ile tüm chart verisi — N+1 yerine 1 sorgu
-      if (period == 'Günlük') {
-        final rows = _db.query(
-          "SELECT strftime('%H', created_at) as bucket, "
-          "COALESCE(SUM(total_amount),0) as total, COUNT(*) as cnt, "
-          "COALESCE(SUM(cash_amount),0) as cash, COALESCE(SUM(card_amount),0) as card, "
-          "COALESCE(SUM(CASE WHEN payment_method='VERESİYE' THEN total_amount ELSE 0 END),0) as veresiye "
-          "FROM sales WHERE created_at LIKE ? GROUP BY bucket",
-          ['${dateFilter}%'],
+      String bucketExpr;
+      if (groupMode == 'hour') {
+        bucketExpr = "strftime('%Y-%m-%d %H', created_at)";
+      } else if (groupMode == 'month') {
+        bucketExpr = "strftime('%Y-%m', created_at)";
+      } else {
+        bucketExpr = "strftime('%Y-%m-%d', created_at)";
+      }
+
+      final rows = _db.query(
+        "SELECT $bucketExpr as bucket, "
+        "COALESCE(SUM(total_amount),0) as total, COUNT(*) as cnt, "
+        "COALESCE(SUM(cash_amount),0) as cash, COALESCE(SUM(card_amount),0) as card, "
+        "COALESCE(SUM(discount),0) as discount, "
+        "COALESCE(SUM(CASE WHEN payment_method='VERESİYE' THEN total_amount ELSE 0 END),0) as veresiye "
+        "FROM sales WHERE created_at >= ? AND created_at < ? GROUP BY bucket",
+        [startArg, endArg],
+      );
+      final byBucket = <String, Map>{for (final r in rows) r['bucket'] as String: r};
+
+      Map<String, Map> returnByBucket = {};
+      try {
+        final retRows = _db.query(
+          "SELECT $bucketExpr as bucket, "
+          "COALESCE(SUM(total_amount),0) as total, "
+          "COALESCE(SUM(CASE WHEN refund_method='cash' THEN total_amount ELSE 0 END),0) as cash_ret, "
+          "COALESCE(SUM(CASE WHEN refund_method='card' THEN total_amount ELSE 0 END),0) as card_ret "
+          "FROM returns WHERE created_at >= ? AND created_at < ? GROUP BY bucket",
+          [startArg, endArg],
         );
-        final byHour = <String, Map>{for (final r in rows) r['bucket'] as String: r};
+        returnByBucket = {for (final r in retRows) r['bucket'] as String: r};
+      } catch (_) {}
+
+      if (groupMode == 'hour') {
         for (int h = 0; h < 24; h++) {
-          final key = h.toString().padLeft(2, '0');
-          final r = byHour[key];
+          final dt = DateTime(rangeStart.year, rangeStart.month, rangeStart.day, h);
+          final key = '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${h.toString().padLeft(2, '0')}';
+          final r = byBucket[key];
+          final ret = returnByBucket[key];
           revenueChart.add((r?['total'] as num?)?.toDouble() ?? 0.0);
           countChart.add((r?['cnt'] as num?)?.toDouble() ?? 0.0);
-          cashChart.add((r?['cash'] as num?)?.toDouble() ?? 0.0);
-          cardChart.add((r?['card'] as num?)?.toDouble() ?? 0.0);
+          cashChart.add(((r?['cash'] as num?)?.toDouble() ?? 0.0) - ((ret?['cash_ret'] as num?)?.toDouble() ?? 0.0));
+          cardChart.add(((r?['card'] as num?)?.toDouble() ?? 0.0) - ((ret?['card_ret'] as num?)?.toDouble() ?? 0.0));
           veresiyeChart.add((r?['veresiye'] as num?)?.toDouble() ?? 0.0);
-          chartLabels.add('$key:00');
+          discountChart.add((r?['discount'] as num?)?.toDouble() ?? 0.0);
+          returnChart.add((ret?['total'] as num?)?.toDouble() ?? 0.0);
+          chartLabels.add('${h.toString().padLeft(2, '0')}:00');
         }
-      } else if (period == 'Yıllık') {
-        final rows = _db.query(
-          "SELECT strftime('%Y-%m', created_at) as bucket, "
-          "COALESCE(SUM(total_amount),0) as total, COUNT(*) as cnt, "
-          "COALESCE(SUM(cash_amount),0) as cash, COALESCE(SUM(card_amount),0) as card, "
-          "COALESCE(SUM(CASE WHEN payment_method='VERESİYE' THEN total_amount ELSE 0 END),0) as veresiye "
-          "FROM sales WHERE created_at >= ? GROUP BY bucket",
-          [dateFilter],
-        );
-        final byMonth = <String, Map>{for (final r in rows) r['bucket'] as String: r};
+      } else if (groupMode == 'month') {
         for (int m = 11; m >= 0; m--) {
-          final date = DateTime.now().subtract(Duration(days: m * 30));
+          final date = DateTime(rangeEndExclusive.year, rangeEndExclusive.month - m, 1);
           final key = '${date.year}-${date.month.toString().padLeft(2, '0')}';
-          final r = byMonth[key];
+          final r = byBucket[key];
+          final ret = returnByBucket[key];
           revenueChart.add((r?['total'] as num?)?.toDouble() ?? 0.0);
           countChart.add((r?['cnt'] as num?)?.toDouble() ?? 0.0);
-          cashChart.add((r?['cash'] as num?)?.toDouble() ?? 0.0);
-          cardChart.add((r?['card'] as num?)?.toDouble() ?? 0.0);
+          cashChart.add(((r?['cash'] as num?)?.toDouble() ?? 0.0) - ((ret?['cash_ret'] as num?)?.toDouble() ?? 0.0));
+          cardChart.add(((r?['card'] as num?)?.toDouble() ?? 0.0) - ((ret?['card_ret'] as num?)?.toDouble() ?? 0.0));
           veresiyeChart.add((r?['veresiye'] as num?)?.toDouble() ?? 0.0);
+          discountChart.add((r?['discount'] as num?)?.toDouble() ?? 0.0);
+          returnChart.add((ret?['total'] as num?)?.toDouble() ?? 0.0);
           chartLabels.add(key.substring(5));
         }
       } else {
-        final rows = _db.query(
-          "SELECT strftime('%Y-%m-%d', created_at) as bucket, "
-          "COALESCE(SUM(total_amount),0) as total, COUNT(*) as cnt, "
-          "COALESCE(SUM(cash_amount),0) as cash, COALESCE(SUM(card_amount),0) as card, "
-          "COALESCE(SUM(CASE WHEN payment_method='VERESİYE' THEN total_amount ELSE 0 END),0) as veresiye "
-          "FROM sales WHERE created_at >= ? GROUP BY bucket",
-          [dateFilter],
-        );
-        final byDay = <String, Map>{for (final r in rows) r['bucket'] as String: r};
-        for (int d = dayCount - 1; d >= 0; d--) {
-          final date = DateTime.now().subtract(Duration(days: d));
+        final dayCount = rangeEndExclusive.difference(rangeStart).inDays;
+        for (int d = 0; d < dayCount; d++) {
+          final date = rangeStart.add(Duration(days: d));
           final key = date.toIso8601String().substring(0, 10);
-          final r = byDay[key];
+          final r = byBucket[key];
+          final ret = returnByBucket[key];
           revenueChart.add((r?['total'] as num?)?.toDouble() ?? 0.0);
           countChart.add((r?['cnt'] as num?)?.toDouble() ?? 0.0);
-          cashChart.add((r?['cash'] as num?)?.toDouble() ?? 0.0);
-          cardChart.add((r?['card'] as num?)?.toDouble() ?? 0.0);
+          cashChart.add(((r?['cash'] as num?)?.toDouble() ?? 0.0) - ((ret?['cash_ret'] as num?)?.toDouble() ?? 0.0));
+          cardChart.add(((r?['card'] as num?)?.toDouble() ?? 0.0) - ((ret?['card_ret'] as num?)?.toDouble() ?? 0.0));
           veresiyeChart.add((r?['veresiye'] as num?)?.toDouble() ?? 0.0);
+          discountChart.add((r?['discount'] as num?)?.toDouble() ?? 0.0);
+          returnChart.add((ret?['total'] as num?)?.toDouble() ?? 0.0);
           chartLabels.add('${date.day}/${date.month}');
         }
       }
-
-      List topProducts = [];
-      List bottomProducts = [];
-      List profitProducts = [];
-      try {
-        topProducts = _db.query('''
-          SELECT si.product_id, COALESCE(si.product_name, p.name, 'Silinmiş') as name, SUM(si.quantity) as total_qty, SUM(si.total_price) as total_rev
-          FROM sale_items si LEFT JOIN products p ON si.product_id = p.id
-          GROUP BY si.product_id ORDER BY total_qty DESC LIMIT 5
-        ''');
-        bottomProducts = _db.query('''
-          SELECT si.product_id, COALESCE(si.product_name, p.name, 'Silinmiş') as name, SUM(si.quantity) as total_qty, SUM(si.total_price) as total_rev
-          FROM sale_items si LEFT JOIN products p ON si.product_id = p.id
-          GROUP BY si.product_id ORDER BY total_qty ASC LIMIT 5
-        ''');
-        profitProducts = _db.query('''
-          SELECT si.product_id, COALESCE(si.product_name, p.name, 'Silinmiş') as name, SUM(si.total_price) as total_rev,
-            SUM(si.quantity * COALESCE(p.purchase_price, 0)) as total_cost,
-            (SUM(si.total_price) - SUM(si.quantity * COALESCE(p.purchase_price, 0))) as profit
-          FROM sale_items si LEFT JOIN products p ON si.product_id = p.id
-          GROUP BY si.product_id ORDER BY profit DESC LIMIT 5
-        ''');
-      } catch (_) {}
 
       return _jsonOk({
         'success': true,
@@ -1281,15 +1503,16 @@ class CoreServer {
         'totalCash': totalCash,
         'totalCard': totalCard,
         'totalVeresiye': totalVeresiye,
+        'totalDiscount': totalDiscount,
+        'totalReturns': totalReturns,
         'revenueChart': revenueChart,
         'countChart': countChart,
         'cashChart': cashChart,
         'cardChart': cardChart,
         'veresiyeChart': veresiyeChart,
+        'discountChart': discountChart,
+        'returnChart': returnChart,
         'chartLabels': chartLabels,
-        'topProducts': topProducts,
-        'bottomProducts': bottomProducts,
-        'profitProducts': profitProducts,
       });
     } catch (e) {
       return _jsonError(e.toString());
