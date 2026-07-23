@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -8,8 +9,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:inventra_app/core/network/api_client.dart';
 import 'package:inventra_app/core/theme/app_theme.dart';
 
-const String _kReleasesUrl = 'https://github.com/iwhimss/inventra/releases/latest';
-const String _kGithubApiLatest = 'https://api.github.com/repos/iwhimss/inventra/releases/latest';
+const String _kRepo = 'iwhimss/inventra';
+const String _kReleasesUrl = 'https://github.com/$_kRepo/releases/latest';
 
 class VersionCheckService {
   /// Sunucudaki `min_app_version` ayarını kontrol eder. Yerel sürüm bu değerin
@@ -69,7 +70,7 @@ class VersionCheckService {
           ),
           actions: [
             ElevatedButton.icon(
-              onPressed: () => _startUpdateFlow(ctx),
+              onPressed: () => _startUpdateFlow(ctx, minVersion),
               icon: const Icon(Icons.system_update, size: 16),
               label: const Text('GÜNCELLE'),
             ),
@@ -79,10 +80,12 @@ class VersionCheckService {
     );
   }
 
-  /// GitHub Releases'ten en son sürümü çeker, platforma uygun bir dosya
-  /// (apk/exe/zip) varsa indirir. Bulunamazsa tarayıcıda releases sayfasını açar.
-  /// Kurulum otomatik başlatılmaz — kullanıcı indirilen dosyayı kendisi açar.
-  static Future<void> _startUpdateFlow(BuildContext context) async {
+  /// `min_app_version`a karşılık gelen GitHub Release'i (tag: `v{sürüm}`) çeker,
+  /// platforma uygun asset'i indirir. Kurulum otomatik başlatılmaz — kullanıcı
+  /// indirilen dosyayı kendisi açar.
+  static Future<void> _startUpdateFlow(BuildContext context, String minVersion) async {
+    final tag = minVersion.startsWith('v') ? minVersion : 'v$minVersion';
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -103,9 +106,9 @@ class VersionCheckService {
     Map<String, dynamic>? release;
     try {
       final resp = await http.get(
-        Uri.parse(_kGithubApiLatest),
+        Uri.parse('https://api.github.com/repos/$_kRepo/releases/tags/$tag'),
         headers: {'Accept': 'application/vnd.github+json'},
-      );
+      ).timeout(const Duration(seconds: 15));
       if (resp.statusCode == 200) {
         release = json.decode(resp.body) as Map<String, dynamic>;
       }
@@ -113,9 +116,14 @@ class VersionCheckService {
 
     if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
 
-    final asset = _pickAssetForPlatform(release);
+    if (release == null) {
+      if (context.mounted) _showNotFoundDialog(context, tag);
+      return;
+    }
+
+    final asset = _pickAssetForTag(release, tag);
     if (asset == null) {
-      await launchUrl(Uri.parse(_kReleasesUrl), mode: LaunchMode.externalApplication);
+      if (context.mounted) _showNotFoundDialog(context, tag, assetMissing: true);
       return;
     }
 
@@ -124,27 +132,77 @@ class VersionCheckService {
     }
   }
 
-  static Map<String, dynamic>? _pickAssetForPlatform(Map<String, dynamic>? release) {
-    if (release == null) return null;
+  /// Kullanıcının sabit adlandırma kuralına göre tam eşleşme arar
+  /// (`inventra-v{sürüm}.apk`, `v{sürüm}-Windows.rar`); bulunamazsa gevşek
+  /// bir sezgisel kurala (uzantı/anahtar kelime) düşer.
+  static Map<String, dynamic>? _pickAssetForTag(Map<String, dynamic> release, String tag) {
     final assets = release['assets'] as List?;
     if (assets == null || assets.isEmpty) return null;
+    final version = tag.startsWith('v') ? tag.substring(1) : tag;
 
-    bool matches(String name) {
-      final n = name.toLowerCase();
-      if (Platform.isAndroid) return n.endsWith('.apk');
-      if (Platform.isWindows) return n.endsWith('.exe') || n.endsWith('.zip') || n.contains('windows');
-      return false;
+    Map<String, dynamic>? findByName(bool Function(String nameLower) matches) {
+      for (final a in assets) {
+        final map = Map<String, dynamic>.from(a as Map);
+        final name = (map['name']?.toString() ?? '').toLowerCase();
+        if (matches(name)) return map;
+      }
+      return null;
     }
 
-    for (final a in assets) {
-      final map = a as Map<String, dynamic>;
-      final name = map['name']?.toString() ?? '';
-      if (matches(name)) return map;
+    if (Platform.isAndroid) {
+      final exactName = 'inventra-v$version.apk'.toLowerCase();
+      return findByName((n) => n == exactName) ?? findByName((n) => n.endsWith('.apk'));
+    }
+    if (Platform.isWindows) {
+      final exactName = 'v$version-windows.rar'.toLowerCase();
+      return findByName((n) => n == exactName) ??
+          findByName((n) => n.endsWith('.exe') || n.endsWith('.zip') || n.endsWith('.rar') || n.contains('windows'));
     }
     return null;
   }
 
+  static void _showNotFoundDialog(BuildContext context, String tag, {bool assetMissing = false}) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.panelBackground,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Güncelleme Bulunamadı'),
+        content: Text(
+          assetMissing
+              ? '$tag sürümü için GitHub Release bulundu ama bu platforma uygun bir kurulum dosyası eklenmemiş.'
+              : '$tag sürümü için GitHub Release bulunamadı. Bu sürüm henüz GitHub\'a yüklenmemiş olabilir.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('KAPAT', style: TextStyle(color: AppTheme.textMuted))),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              launchUrl(Uri.parse(_kReleasesUrl), mode: LaunchMode.externalApplication);
+            },
+            child: const Text('RELEASES SAYFASINI AÇ'),
+          ),
+        ],
+      ),
+    );
+  }
+
   static Future<void> _downloadAsset(BuildContext context, String fileName, String url) async {
+    final client = http.Client();
+    StreamSubscription<List<int>>? subscription;
+    IOSink? sink;
+    Timer? stallTimer;
+    final progressNotifier = ValueNotifier<double?>(null); // null = toplam boyut bilinmiyor
+    final receivedNotifier = ValueNotifier<int>(0);
+    bool dialogClosed = false;
+
+    void closeProgressDialog() {
+      if (!dialogClosed && context.mounted) {
+        dialogClosed = true;
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -153,26 +211,89 @@ class VersionCheckService {
         child: AlertDialog(
           backgroundColor: AppTheme.panelBackground,
           title: const Text('Güncelleme İndiriliyor'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const LinearProgressIndicator(),
-              const SizedBox(height: 12),
-              Text(fileName, style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-            ],
+          content: ValueListenableBuilder<double?>(
+            valueListenable: progressNotifier,
+            builder: (ctx, progress, _) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LinearProgressIndicator(value: progress),
+                const SizedBox(height: 12),
+                ValueListenableBuilder<int>(
+                  valueListenable: receivedNotifier,
+                  builder: (ctx, received, __) => Text(
+                    progress != null
+                        ? '%${(progress * 100).toStringAsFixed(0)} — ${(received / (1024 * 1024)).toStringAsFixed(1)} MB'
+                        : '${(received / (1024 * 1024)).toStringAsFixed(1)} MB indirildi...',
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(fileName, style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+              ],
+            ),
           ),
         ),
       ),
     );
 
+    Directory? dir;
     try {
-      final dir = await _resolveDownloadDir();
+      dir = await _resolveDownloadDir();
       final filePath = '${dir.path}${Platform.pathSeparator}$fileName';
-      final resp = await http.get(Uri.parse(url));
       final file = File(filePath);
-      await file.writeAsBytes(resp.bodyBytes);
+      sink = file.openWrite();
 
-      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+      final streamedResponse = await client.send(http.Request('GET', Uri.parse(url))).timeout(
+            const Duration(seconds: 20),
+            onTimeout: () => throw Exception('Sunucuya bağlanılamadı (zaman aşımı).'),
+          );
+
+      if (streamedResponse.statusCode != 200) {
+        throw Exception('Sunucu hatası: HTTP ${streamedResponse.statusCode}');
+      }
+
+      final total = streamedResponse.contentLength;
+      int received = 0;
+      final completer = Completer<void>();
+
+      void resetStallTimer() {
+        stallTimer?.cancel();
+        stallTimer = Timer(const Duration(seconds: 30), () {
+          if (!completer.isCompleted) {
+            completer.completeError(Exception('İndirme zaman aşımına uğradı (30 saniye veri gelmedi).'));
+          }
+        });
+      }
+
+      resetStallTimer();
+      subscription = streamedResponse.stream.listen(
+        (chunk) {
+          resetStallTimer();
+          sink!.add(chunk);
+          received += chunk.length;
+          receivedNotifier.value = received;
+          if (total != null && total > 0) {
+            progressNotifier.value = received / total;
+          }
+        },
+        onDone: () {
+          stallTimer?.cancel();
+          if (!completer.isCompleted) completer.complete();
+        },
+        onError: (Object e) {
+          stallTimer?.cancel();
+          if (!completer.isCompleted) completer.completeError(e);
+        },
+        cancelOnError: true,
+      );
+
+      await completer.future;
+      await sink.flush();
+      await sink.close();
+      sink = null;
+      client.close();
+
+      closeProgressDialog();
 
       if (context.mounted) {
         showDialog(
@@ -186,7 +307,7 @@ class VersionCheckService {
             actions: [
               if (Platform.isWindows)
                 TextButton(
-                  onPressed: () => Process.run('explorer', [dir.path]),
+                  onPressed: () => Process.run('explorer', [dir!.path]),
                   child: const Text('KLASÖRÜ AÇ'),
                 ),
               ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('TAMAM')),
@@ -195,9 +316,32 @@ class VersionCheckService {
         );
       }
     } catch (e) {
-      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+      stallTimer?.cancel();
+      await subscription?.cancel();
+      try {
+        await sink?.close();
+      } catch (_) {}
+      client.close();
+      closeProgressDialog();
       if (context.mounted) {
-        await launchUrl(Uri.parse(_kReleasesUrl), mode: LaunchMode.externalApplication);
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppTheme.panelBackground,
+            title: const Text('İndirme Başarısız'),
+            content: Text('Güncelleme indirilemedi:\n\n$e'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  launchUrl(Uri.parse(_kReleasesUrl), mode: LaunchMode.externalApplication);
+                },
+                child: const Text('RELEASES SAYFASINI AÇ'),
+              ),
+              ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('TAMAM')),
+            ],
+          ),
+        );
       }
     }
   }

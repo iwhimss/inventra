@@ -1108,11 +1108,14 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                 ),
                 const Divider(height: 8),
               ],
-              // Action Buttons Row
+              // Action Buttons — iki mantıksal gruba ayrılmış: (1) fiyat/indirim, (2) sepet yönetimi
               if (cartNotifier.currentCart.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12.0),
-                  child: Wrap(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                  Wrap(
                     alignment: WrapAlignment.end,
                     spacing: 8,
                     runSpacing: 8,
@@ -1186,7 +1189,78 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                             child: Text('Yuvarla (${((cartNotifier.cartTotal / 10).floor() * 10.0).toStringAsFixed(0)} ₺)', style: TextStyle(fontSize: 12, color: AppTheme.secondaryAccent, fontWeight: FontWeight.bold)),
                           ),
                         ),
-                      const SizedBox(width: 8),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      InkWell(
+                        onTap: cartNotifier.currentCart.isEmpty
+                            ? null
+                            : () => _showQuoteSizeDialog(cartNotifier),
+                        child: Opacity(
+                          opacity: cartNotifier.currentCart.isEmpty ? 0.4 : 1.0,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(color: AppTheme.secondaryAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppTheme.secondaryAccent.withOpacity(0.3))),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.request_quote, color: AppTheme.secondaryAccent, size: 14),
+                                const SizedBox(width: 4),
+                                Text('Fiyat Teklifi', style: TextStyle(fontSize: 12, color: AppTheme.secondaryAccent)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      InkWell(
+                        onTap: () => _showTransferCartDialog(cartNotifier),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(color: AppTheme.primaryAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppTheme.primaryAccent.withOpacity(0.3))),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.send, color: AppTheme.primaryAccent, size: 14),
+                              const SizedBox(width: 4),
+                              Text('Gönder', style: TextStyle(fontSize: 12, color: AppTheme.primaryAccent)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      InkWell(
+                        onTap: cartNotifier.currentCart.isEmpty
+                            ? null
+                            : () => Navigator.of(context).push(MaterialPageRoute(
+                                  builder: (_) => ReturnScreen(
+                                    saleItems: cartNotifier.currentCart.map((item) => {
+                                      'product_id': item.productId,
+                                      'product_name': item.productName,
+                                      'quantity': item.quantity,
+                                      'unit_price': item.effectivePrice,
+                                    }).toList(),
+                                  ),
+                                )),
+                        child: Opacity(
+                          opacity: cartNotifier.currentCart.isEmpty ? 0.4 : 1.0,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(color: AppTheme.dangerAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppTheme.dangerAccent.withOpacity(0.3))),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.assignment_return, color: AppTheme.dangerAccent, size: 14),
+                                const SizedBox(width: 4),
+                                Text('İade Al', style: TextStyle(fontSize: 12, color: AppTheme.dangerAccent)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                       InkWell(
                         onTap: () async {
                           final confirm = await showDialog<bool>(
@@ -1222,59 +1296,8 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: cartNotifier.currentCart.isEmpty
-                            ? null
-                            : () => _showQuoteSizeDialog(cartNotifier),
-                        child: Opacity(
-                          opacity: cartNotifier.currentCart.isEmpty ? 0.4 : 1.0,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(color: AppTheme.secondaryAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppTheme.secondaryAccent.withOpacity(0.3))),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.request_quote, color: AppTheme.secondaryAccent, size: 14),
-                                const SizedBox(width: 4),
-                                Text('Fiyat Teklifi', style: TextStyle(fontSize: 12, color: AppTheme.secondaryAccent)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: () => _showTransferCartDialog(cartNotifier),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(color: AppTheme.primaryAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppTheme.primaryAccent.withOpacity(0.3))),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.send, color: AppTheme.primaryAccent, size: 14),
-                              const SizedBox(width: 4),
-                              Text('Gönder', style: TextStyle(fontSize: 12, color: AppTheme.primaryAccent)),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReturnScreen())),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(color: AppTheme.dangerAccent.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppTheme.dangerAccent.withOpacity(0.3))),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.assignment_return, color: AppTheme.dangerAccent, size: 14),
-                              const SizedBox(width: 4),
-                              Text('İade Al', style: TextStyle(fontSize: 12, color: AppTheme.dangerAccent)),
-                            ],
-                          ),
-                        ),
-                      ),
+                    ],
+                  ),
                     ],
                   ),
                 ),
@@ -1901,6 +1924,7 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
+          scrollable: true,
           backgroundColor: AppTheme.panelBackground,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(

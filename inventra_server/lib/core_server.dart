@@ -775,7 +775,7 @@ class CoreServer {
       }
 
       // Check against explicit list of valid tables to prevent SQL injection
-      final validTables = ['products', 'sales', 'sale_items', 'product_groups', 'label_templates', 'users', 'roles', 'settings', 'events', 'cart_transfers'];
+      final validTables = ['products', 'sales', 'sale_items', 'product_groups', 'label_templates', 'users', 'roles', 'settings', 'events', 'cart_transfers', 'returns'];
       if (!validTables.contains(table)) {
         return _jsonError('Invalid table name', code: 400);
       }
@@ -785,7 +785,7 @@ class CoreServer {
 
       // Ensure updated_at/created_at columns exist gracefully
       String query;
-      if (table == 'sales' || table == 'cart_transfers') {
+      if (table == 'sales' || table == 'cart_transfers' || table == 'returns') {
         query = 'SELECT MAX(created_at) as last_updated FROM $table';
       } else if (table == 'sale_items' || table == 'events' || table == 'settings' || table == 'label_templates') {
         // Some tables might not have standard updated_at
@@ -1373,7 +1373,7 @@ class CoreServer {
         "FROM sales WHERE created_at >= ? AND created_at < ?",
         [startArg, endArg],
       );
-      final totalRevenue = (totalResult.first['total'] as num?)?.toDouble() ?? 0.0;
+      double totalRevenue = (totalResult.first['total'] as num?)?.toDouble() ?? 0.0;
       final totalSalesCount = (totalResult.first['cnt'] as num?)?.toInt() ?? 0;
       final totalDiscount = (totalResult.first['discount'] as num?)?.toDouble() ?? 0.0;
 
@@ -1404,6 +1404,7 @@ class CoreServer {
         totalReturns = (retResult.first['total'] as num?)?.toDouble() ?? 0.0;
         totalCash -= (retResult.first['cash_ret'] as num?)?.toDouble() ?? 0.0;
         totalCard -= (retResult.first['card_ret'] as num?)?.toDouble() ?? 0.0;
+        totalRevenue -= totalReturns;
       } catch (_) {}
 
       List<double> revenueChart = [];
@@ -1454,7 +1455,7 @@ class CoreServer {
           final key = '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${h.toString().padLeft(2, '0')}';
           final r = byBucket[key];
           final ret = returnByBucket[key];
-          revenueChart.add((r?['total'] as num?)?.toDouble() ?? 0.0);
+          revenueChart.add(((r?['total'] as num?)?.toDouble() ?? 0.0) - ((ret?['total'] as num?)?.toDouble() ?? 0.0));
           countChart.add((r?['cnt'] as num?)?.toDouble() ?? 0.0);
           cashChart.add(((r?['cash'] as num?)?.toDouble() ?? 0.0) - ((ret?['cash_ret'] as num?)?.toDouble() ?? 0.0));
           cardChart.add(((r?['card'] as num?)?.toDouble() ?? 0.0) - ((ret?['card_ret'] as num?)?.toDouble() ?? 0.0));
@@ -1469,7 +1470,7 @@ class CoreServer {
           final key = '${date.year}-${date.month.toString().padLeft(2, '0')}';
           final r = byBucket[key];
           final ret = returnByBucket[key];
-          revenueChart.add((r?['total'] as num?)?.toDouble() ?? 0.0);
+          revenueChart.add(((r?['total'] as num?)?.toDouble() ?? 0.0) - ((ret?['total'] as num?)?.toDouble() ?? 0.0));
           countChart.add((r?['cnt'] as num?)?.toDouble() ?? 0.0);
           cashChart.add(((r?['cash'] as num?)?.toDouble() ?? 0.0) - ((ret?['cash_ret'] as num?)?.toDouble() ?? 0.0));
           cardChart.add(((r?['card'] as num?)?.toDouble() ?? 0.0) - ((ret?['card_ret'] as num?)?.toDouble() ?? 0.0));
@@ -1485,7 +1486,7 @@ class CoreServer {
           final key = date.toIso8601String().substring(0, 10);
           final r = byBucket[key];
           final ret = returnByBucket[key];
-          revenueChart.add((r?['total'] as num?)?.toDouble() ?? 0.0);
+          revenueChart.add(((r?['total'] as num?)?.toDouble() ?? 0.0) - ((ret?['total'] as num?)?.toDouble() ?? 0.0));
           countChart.add((r?['cnt'] as num?)?.toDouble() ?? 0.0);
           cashChart.add(((r?['cash'] as num?)?.toDouble() ?? 0.0) - ((ret?['cash_ret'] as num?)?.toDouble() ?? 0.0));
           cardChart.add(((r?['card'] as num?)?.toDouble() ?? 0.0) - ((ret?['card_ret'] as num?)?.toDouble() ?? 0.0));

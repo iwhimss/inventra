@@ -139,22 +139,32 @@ class ReportsNotifier extends StateNotifier<ReportsState> {
       try {
         final todayStr = DateTime.now().toIso8601String().split('T')[0];
 
-        // Step 1: Smart Sync - Check if the sales table has new data since we last cached this report
-        final syncResp = await ApiClient.instance.checkTableSync('sales');
-        if (syncResp.success) {
-          final serverCount = syncResp.data?['count'] as int? ?? 0;
-          final serverDate = syncResp.data?['last_updated'] as String?;
+        // Step 1: Smart Sync - sales VE returns tablolarının ikisi de değişmemiş olmalı
+        // (iade işlemi sales tablosuna dokunmaz, sadece returns'e yazar — bu yüzden
+        // önbellek tazeliği ikisine birden bakmalı, aksi halde iade sonrası eski
+        // rapor gösterilmeye devam eder).
+        final salesSyncResp = await ApiClient.instance.checkTableSync('sales');
+        final returnsSyncResp = await ApiClient.instance.checkTableSync('returns');
+        if (salesSyncResp.success && returnsSyncResp.success) {
+          final serverSalesCount = salesSyncResp.data?['count'] as int? ?? 0;
+          final serverSalesDate = salesSyncResp.data?['last_updated'] as String?;
+          final serverReturnsCount = returnsSyncResp.data?['count'] as int? ?? 0;
+          final serverReturnsDate = returnsSyncResp.data?['last_updated'] as String?;
 
           // Get the metadata of the last cached report for this period
           final meta = await db.query('settings', where: 'key = ?', whereArgs: ['offline_reports_meta_$cacheKey']);
           if (meta.isNotEmpty) {
             final metaData = json.decode(meta.first['value'] as String);
-            final cachedCount = metaData['sales_count'] as int?;
-            final cachedDate = metaData['sales_date'] as String?;
+            final cachedSalesCount = metaData['sales_count'] as int?;
+            final cachedSalesDate = metaData['sales_date'] as String?;
+            final cachedReturnsCount = metaData['returns_count'] as int?;
+            final cachedReturnsDate = metaData['returns_date'] as String?;
             final cachedReportDate = metaData['report_date'] as String?;
 
-            // Cache is fresh only if sales data hasn't changed AND report was generated today
-            if (serverCount > 0 && serverCount == cachedCount && serverDate == cachedDate && cachedDate != null && cachedReportDate == todayStr) {
+            // Cache is fresh only if hem sales hem returns değişmemişse VE rapor bugün üretildiyse
+            final salesUnchanged = serverSalesCount == cachedSalesCount && serverSalesDate == cachedSalesDate;
+            final returnsUnchanged = serverReturnsCount == cachedReturnsCount && serverReturnsDate == cachedReturnsDate;
+            if (salesUnchanged && returnsUnchanged && cachedReportDate == todayStr) {
               // Cache is fresh! Use it directly.
               final cached = await db.query('settings', where: 'key = ?', whereArgs: ['offline_reports_$cacheKey']);
               if (cached.isNotEmpty) {
@@ -180,12 +190,15 @@ class ReportsNotifier extends StateNotifier<ReportsState> {
             // Cache the report data
             await db.insert('settings', {'key': 'offline_reports_$cacheKey', 'value': json.encode(data)}, conflictAlgorithm: ConflictAlgorithm.replace);
 
-            // Re-fetch sync status to capture exactly what sales snapshot resulted in this report
-            final postSyncResp = await ApiClient.instance.checkTableSync('sales');
-            if (postSyncResp.success) {
+            // Re-fetch sync status to capture exactly what sales+returns snapshot resulted in this report
+            final postSalesSync = await ApiClient.instance.checkTableSync('sales');
+            final postReturnsSync = await ApiClient.instance.checkTableSync('returns');
+            if (postSalesSync.success && postReturnsSync.success) {
               final metaStr = json.encode({
-                'sales_count': postSyncResp.data?['count'],
-                'sales_date': postSyncResp.data?['last_updated'],
+                'sales_count': postSalesSync.data?['count'],
+                'sales_date': postSalesSync.data?['last_updated'],
+                'returns_count': postReturnsSync.data?['count'],
+                'returns_date': postReturnsSync.data?['last_updated'],
                 'report_date': todayStr,
               });
               await db.insert('settings', {'key': 'offline_reports_meta_$cacheKey', 'value': metaStr}, conflictAlgorithm: ConflictAlgorithm.replace);

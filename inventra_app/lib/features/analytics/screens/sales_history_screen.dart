@@ -1,5 +1,4 @@
-import 'dart:io';
-import 'package:flutter/foundation.dart';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:inventra_app/core/theme/app_theme.dart';
@@ -23,6 +22,8 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
   final TextEditingController _minTotalController = TextEditingController();
   final TextEditingController _maxTotalController = TextEditingController();
   final TextEditingController _customerNameController = TextEditingController();
+  Timer? _totalDebounce;
+  Timer? _customerDebounce;
 
   @override
   void initState() {
@@ -35,7 +36,19 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
     _minTotalController.dispose();
     _maxTotalController.dispose();
     _customerNameController.dispose();
+    _totalDebounce?.cancel();
+    _customerDebounce?.cancel();
     super.dispose();
+  }
+
+  void _onTotalRangeChanged() {
+    _totalDebounce?.cancel();
+    _totalDebounce = Timer(const Duration(milliseconds: 500), _applyTotalRange);
+  }
+
+  void _onCustomerNameChanged() {
+    _customerDebounce?.cancel();
+    _customerDebounce = Timer(const Duration(milliseconds: 500), _applyCustomerName);
   }
 
   Future<void> _pickDate(bool isStart) async {
@@ -83,47 +96,6 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
     _maxTotalController.clear();
     _customerNameController.clear();
     ref.read(salesHistoryProvider.notifier).clearFilter();
-  }
-
-  Future<void> _clearAllHistory() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.panelBackground,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Geçmişi Temizle'),
-        content: Text('Tüm satış geçmişi silinecek. Bu işlem geri alınamaz. Emin misiniz?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.dangerAccent),
-            child: const Text('TEMİZLE'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-
-    bool isDesktop = !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
-
-    if (isDesktop) {
-      // Windows: delete from local DB directly
-      final db = await DatabaseHelper.instance.database;
-      await db.delete('sales');
-      await db.delete('sale_items');
-    } else {
-      // Mobile: clear all sales via API, then clear locally
-      await ApiClient.instance.delete('/api/sales');
-      final db = await DatabaseHelper.instance.database;
-      await db.delete('sales');
-      await db.delete('sale_items');
-    }
-    await ref.read(salesHistoryProvider.notifier).loadSales();
-    if (mounted) {
-      SoundService.playNotification();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Tüm geçmiş işlemler temizlendi.'), backgroundColor: AppTheme.secondaryAccent));
-    }
   }
 
   String _formatDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
@@ -357,7 +329,7 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
             keyboardType: TextInputType.number,
             style: const TextStyle(fontSize: 12),
             decoration: const InputDecoration(labelText: 'Min ₺', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
-            onSubmitted: (_) => _applyTotalRange(),
+            onChanged: (_) => _onTotalRangeChanged(),
           ),
         ),
         SizedBox(
@@ -367,20 +339,18 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
             keyboardType: TextInputType.number,
             style: const TextStyle(fontSize: 12),
             decoration: const InputDecoration(labelText: 'Maks ₺', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
-            onSubmitted: (_) => _applyTotalRange(),
+            onChanged: (_) => _onTotalRangeChanged(),
           ),
         ),
-        IconButton(icon: Icon(Icons.check, size: 18, color: AppTheme.primaryAccent), tooltip: 'Tutar Filtresini Uygula', onPressed: _applyTotalRange),
         SizedBox(
           width: isMobile ? 160 : 200,
           child: TextField(
             controller: _customerNameController,
             style: const TextStyle(fontSize: 12),
             decoration: const InputDecoration(labelText: 'Müşteri Ara', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8), prefixIcon: Icon(Icons.person_search, size: 16)),
-            onSubmitted: (_) => _applyCustomerName(),
+            onChanged: (_) => _onCustomerNameChanged(),
           ),
         ),
-        IconButton(icon: Icon(Icons.check, size: 18, color: AppTheme.primaryAccent), tooltip: 'Müşteri Filtresini Uygula', onPressed: _applyCustomerName),
       ],
     );
   }
@@ -418,11 +388,6 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
                 if (state.hasActiveFilters)
                   IconButton(icon: Icon(Icons.clear, color: AppTheme.dangerAccent, size: 18), onPressed: _clearFilter),
                 IconButton(icon: Icon(Icons.refresh, color: AppTheme.primaryAccent, size: 20), onPressed: () => ref.read(salesHistoryProvider.notifier).loadSales()),
-                OutlinedButton(
-                  onPressed: state.sales.isEmpty ? null : _clearAllHistory,
-                  style: OutlinedButton.styleFrom(side: BorderSide(color: AppTheme.dangerAccent.withOpacity(0.5))),
-                  child: Text('Temizle', style: TextStyle(fontSize: 11, color: AppTheme.dangerAccent)),
-                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -449,13 +414,6 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
                 ],
                 const SizedBox(width: 8),
                 IconButton(icon: Icon(Icons.refresh, color: AppTheme.primaryAccent), onPressed: () => ref.read(salesHistoryProvider.notifier).loadSales()),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: state.sales.isEmpty ? null : _clearAllHistory,
-                  icon: Icon(Icons.delete_sweep, size: 16, color: AppTheme.dangerAccent),
-                  label: Text('Temizle', style: TextStyle(fontSize: 13, color: AppTheme.dangerAccent)),
-                  style: OutlinedButton.styleFrom(side: BorderSide(color: AppTheme.dangerAccent.withOpacity(0.5))),
-                ),
               ],
             ),
             const SizedBox(height: 12),

@@ -5,7 +5,6 @@ import 'package:inventra_app/core/network/api_client.dart';
 import 'package:inventra_app/core/services/sound_service.dart';
 import 'package:inventra_app/core/utils/format_utils.dart';
 import 'package:inventra_app/features/auth/providers/auth_provider.dart';
-import 'package:inventra_app/features/product/providers/product_provider.dart';
 
 class _ReturnLine {
   final String productId;
@@ -23,16 +22,18 @@ class _ReturnLine {
   });
 }
 
-/// İade Al ekranı — iki modda çalışır:
-/// 1) Geçmiş bir satıştan iade: [sale] + [saleItems] verilir, ürünler ve satılan
-///    miktarlar hazır gelir, kullanıcı iade edilecek miktarı ayarlar.
-/// 2) Bağımsız iade: hiçbir şey verilmez, kullanıcı ürünleri POS'takine benzer
-///    şekilde arayıp ekler.
+/// İade Al ekranı — her zaman dışarıdan verilen ürün listesiyle çalışır, serbest
+/// ürün arama yoktur. İki kaynaktan açılabilir:
+/// 1) Geçmiş bir satıştan iade: [sale] + [saleItems] verilir, satır miktarı 0'dan
+///    başlar (kullanıcı kısmi/tam iade miktarını bilinçli seçer).
+/// 2) POS sepetinden iade: sadece [saleItems] verilir ([sale] null), satır miktarı
+///    doğrudan sepetteki miktara eşit başlar (kullanıcı ek tıklama yapmadan
+///    sepettekileri direkt iade alabilir).
 class ReturnScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic>? sale;
-  final List<Map<String, dynamic>>? saleItems;
+  final List<Map<String, dynamic>> saleItems;
 
-  const ReturnScreen({super.key, this.sale, this.saleItems});
+  const ReturnScreen({super.key, this.sale, required this.saleItems});
 
   @override
   ConsumerState<ReturnScreen> createState() => _ReturnScreenState();
@@ -40,7 +41,6 @@ class ReturnScreen extends ConsumerStatefulWidget {
 
 class _ReturnScreenState extends ConsumerState<ReturnScreen> {
   final List<_ReturnLine> _lines = [];
-  final TextEditingController _searchController = TextEditingController();
   String _refundMethod = 'cash';
   bool _submitting = false;
 
@@ -49,38 +49,21 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.saleItems != null) {
-      for (final item in widget.saleItems!) {
-        final qty = (item['quantity'] as num?)?.toDouble() ?? 1;
-        _lines.add(_ReturnLine(
-          productId: item['product_id']?.toString() ?? '',
-          productName: item['product_name']?.toString() ?? 'Ürün',
-          unitPrice: (item['unit_price'] as num?)?.toDouble() ?? (item['price'] as num?)?.toDouble() ?? 0,
-          maxQty: qty,
-          quantity: 0,
-        ));
-      }
+    for (final item in widget.saleItems) {
+      final qty = (item['quantity'] as num?)?.toDouble() ?? 1;
+      _lines.add(_ReturnLine(
+        productId: item['product_id']?.toString() ?? '',
+        productName: item['product_name']?.toString() ?? 'Ürün',
+        unitPrice: (item['unit_price'] as num?)?.toDouble() ?? (item['price'] as num?)?.toDouble() ?? 0,
+        maxQty: qty,
+        // Geçmiş satıştan iadede bilinçli seçim için 0'dan başlar;
+        // POS sepetinden iadede doğrudan sepetteki miktarla dolu gelir.
+        quantity: _isFromSale ? 0 : qty,
+      ));
     }
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
   double get _totalAmount => _lines.fold(0.0, (sum, l) => sum + l.unitPrice * l.quantity);
-
-  void _addProductLine(String id, String name, double price) {
-    final existing = _lines.indexWhere((l) => l.productId == id);
-    setState(() {
-      if (existing != -1) {
-        _lines[existing].quantity += 1;
-      } else {
-        _lines.add(_ReturnLine(productId: id, productName: name, unitPrice: price, quantity: 1));
-      }
-    });
-  }
 
   Future<void> _submit() async {
     final activeLines = _lines.where((l) => l.quantity > 0).toList();
@@ -140,10 +123,9 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
       ),
       body: Column(
         children: [
-          if (!_isFromSale) _buildProductSearch(),
           Expanded(
             child: _lines.isEmpty
-                ? Center(child: Text('İade edilecek ürün ekleyin.', style: TextStyle(color: AppTheme.textMuted)))
+                ? Center(child: Text('İade edilecek ürün bulunamadı.', style: TextStyle(color: AppTheme.textMuted)))
                 : ListView.separated(
                     padding: const EdgeInsets.all(12),
                     itemCount: _lines.length,
@@ -152,64 +134,6 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                   ),
           ),
           _buildBottomPanel(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProductSearch() {
-    final productsState = ref.watch(productProvider);
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _searchController,
-            decoration: InputDecoration(
-              hintText: 'Ürün ara (barkod veya isim)...',
-              prefixIcon: const Icon(Icons.search),
-              isDense: true,
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-          if (_searchController.text.trim().length >= 2)
-            productsState.when(
-              loading: () => const Padding(padding: EdgeInsets.all(8), child: LinearProgressIndicator()),
-              error: (_, __) => const SizedBox(),
-              data: (products) {
-                final q = _searchController.text.trim().toLowerCase();
-                final matches = products.where((p) =>
-                    p.name.toLowerCase().contains(q) || p.barcode.toLowerCase().contains(q)).take(6).toList();
-                if (matches.isEmpty) return const SizedBox();
-                return Container(
-                  margin: const EdgeInsets.only(top: 4),
-                  constraints: const BoxConstraints(maxHeight: 220),
-                  decoration: BoxDecoration(
-                    color: AppTheme.panelBackground,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppTheme.borderBright),
-                  ),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: matches.length,
-                    itemBuilder: (ctx, i) {
-                      final p = matches[i];
-                      return ListTile(
-                        dense: true,
-                        title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text('${p.salePrice.toStringAsFixed(2)} ₺', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-                        onTap: () {
-                          _addProductLine(p.id, p.name, p.salePrice);
-                          _searchController.clear();
-                          setState(() {});
-                        },
-                      );
-                    },
-                  ),
-                );
-              },
-            ),
         ],
       ),
     );
@@ -236,11 +160,6 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                 ? () => setState(() => line.quantity += 1)
                 : null,
           ),
-          if (!_isFromSale)
-            IconButton(
-              icon: Icon(Icons.delete_outline, size: 20, color: AppTheme.dangerAccent),
-              onPressed: () => setState(() => _lines.removeAt(index)),
-            ),
         ],
       ),
     );
