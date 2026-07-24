@@ -216,67 +216,76 @@ class PdfService {
         ? PdfPageFormat.a4
         : PdfPageFormat(thermalSize['width']! * PdfPageFormat.mm, double.infinity, marginAll: 5 * PdfPageFormat.mm);
 
-    pdf.addPage(
-      pw.Page(
-        pageFormat: format,
-        build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
+    final content = <pw.Widget>[
+      pw.Center(child: pw.Text(businessName, style: titleStyle)),
+      pw.Center(child: pw.Text("Satış Fişi", style: subtitleStyle)),
+      pw.Divider(),
+      pw.Text("Tarih: ${DateTime.now().toString().substring(0, 16)}", style: normalStyle),
+      pw.Text("Satış No: ${payload['id'].toString().substring(0, 8)}", style: normalStyle),
+      pw.Text("Ödeme: ${payload['payment_type']}", style: normalStyle),
+      pw.Divider(),
+      ...items.map((item) {
+        final discount = (item['discount'] as num?)?.toDouble() ?? 0;
+        final effectivePrice = (item['price'] as num).toDouble() - discount;
+        return pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(vertical: 2),
+          child: pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
-              pw.Center(child: pw.Text(businessName, style: titleStyle)),
-              pw.Center(child: pw.Text("Satış Fişi", style: subtitleStyle)),
-              pw.Divider(),
-              pw.Text("Tarih: ${DateTime.now().toString().substring(0, 16)}", style: normalStyle),
-              pw.Text("Satış No: ${payload['id'].toString().substring(0, 8)}", style: normalStyle),
-              pw.Text("Ödeme: ${payload['payment_type']}", style: normalStyle),
-              pw.Divider(),
-              ...items.map((item) {
-                final discount = (item['discount'] as num?)?.toDouble() ?? 0;
-                final effectivePrice = (item['price'] as num).toDouble() - discount;
-                return pw.Padding(
-                  padding: const pw.EdgeInsets.symmetric(vertical: 2),
-                  child: pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Expanded(child: pw.Text("${formatQty((item['quantity'] as num?)?.toDouble() ?? 1)}x ${item['product_name'] ?? 'Ürün'}", maxLines: 1, style: normalStyle)),
-                      pw.Text("${(effectivePrice * item['quantity']).toStringAsFixed(2)} ₺", style: normalStyle),
-                    ]
-                  ),
-                );
-              }),
-              if (discountAmount > 0) ...[
-                pw.Divider(),
-                pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-                  pw.Text("İNDİRİM:", style: smallStyle),
-                  pw.Text("-${discountAmount.toStringAsFixed(2)} ₺", style: smallStyle),
-                ]),
-              ],
-              pw.Divider(),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text("TOPLAM:", style: boldStyle),
-                  pw.Text("${payload['total_amount'].toStringAsFixed(2)} ₺", style: boldStyle),
-                ]
-              ),
-              if ((payload['change_amount'] as num?) != null && (payload['change_amount'] as num) > 0) ...[
-                pw.SizedBox(height: 4),
-                pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-                  pw.Text("Alınan:", style: smallStyle),
-                  pw.Text("${(payload['paid_amount'] as num?)?.toStringAsFixed(2) ?? '0.00'} ₺", style: smallStyle),
-                ]),
-                pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-                  pw.Text("Para Üstü:", style: smallStyle),
-                  pw.Text("${(payload['change_amount'] as num).toStringAsFixed(2)} ₺", style: smallStyle),
-                ]),
-              ],
-              pw.Divider(),
-              pw.Center(child: pw.Text("Bizi tercih ettiğiniz için teşekkürler!", style: smallStyle)),
-            ],
-          );
-        },
+              pw.Expanded(child: pw.Text("${formatQty((item['quantity'] as num?)?.toDouble() ?? 1)}x ${item['product_name'] ?? 'Ürün'}", maxLines: 1, style: normalStyle)),
+              pw.Text("${(effectivePrice * item['quantity']).toStringAsFixed(2)} ₺", style: normalStyle),
+            ]
+          ),
+        );
+      }),
+      if (discountAmount > 0) ...[
+        pw.Divider(),
+        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+          pw.Text("İNDİRİM:", style: smallStyle),
+          pw.Text("-${discountAmount.toStringAsFixed(2)} ₺", style: smallStyle),
+        ]),
+      ],
+      pw.Divider(),
+      pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text("TOPLAM:", style: boldStyle),
+          pw.Text("${payload['total_amount'].toStringAsFixed(2)} ₺", style: boldStyle),
+        ]
       ),
-    );
+      if ((payload['change_amount'] as num?) != null && (payload['change_amount'] as num) > 0) ...[
+        pw.SizedBox(height: 4),
+        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+          pw.Text("Alınan:", style: smallStyle),
+          pw.Text("${(payload['paid_amount'] as num?)?.toStringAsFixed(2) ?? '0.00'} ₺", style: smallStyle),
+        ]),
+        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+          pw.Text("Para Üstü:", style: smallStyle),
+          pw.Text("${(payload['change_amount'] as num).toStringAsFixed(2)} ₺", style: smallStyle),
+        ]),
+      ],
+      pw.Divider(),
+      pw.Center(child: pw.Text("Bizi tercih ettiğiniz için teşekkürler!", style: smallStyle)),
+    ];
+
+    if (isA4) {
+      // A4: içerik tek sayfaya sığmazsa pw.MultiPage otomatik yeni sayfa ekler.
+      // pw.Page sabit tek sayfa olduğu için sığmayan ürünleri sessizce kırpardı.
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: format,
+          build: (pw.Context context) => content,
+        ),
+      );
+    } else {
+      // Termal: sayfa yüksekliği zaten sonsuz (tek "sonsuz rulo" sayfa), MultiPage'e gerek yok.
+      pdf.addPage(
+        pw.Page(
+          pageFormat: format,
+          build: (pw.Context context) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: content),
+        ),
+      );
+    }
 
     final filePath = await _getSavePath('Fişler', 'Fis_${payload['id'].toString().substring(0, 8)}_${DateTime.now().millisecondsSinceEpoch}.pdf');
     if (filePath == null) return null;
@@ -306,58 +315,66 @@ class PdfService {
         ? PdfPageFormat.a4
         : PdfPageFormat(thermalSize['width']! * PdfPageFormat.mm, double.infinity, marginAll: 5 * PdfPageFormat.mm);
 
-    pdf.addPage(
-      pw.Page(
-        pageFormat: format,
-        build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
+    final content = <pw.Widget>[
+      pw.Center(child: pw.Text(businessName, style: titleStyle)),
+      pw.Center(child: pw.Text("Fiyat Teklifi", style: subtitleStyle)),
+      pw.Divider(),
+      pw.Text("Tarih: ${DateTime.now().toString().substring(0, 16)}", style: normalStyle),
+      pw.Divider(),
+      ...items.map((item) {
+        return pw.Padding(
+          padding: const pw.EdgeInsets.symmetric(vertical: 2),
+          child: pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
-              pw.Center(child: pw.Text(businessName, style: titleStyle)),
-              pw.Center(child: pw.Text("Fiyat Teklifi", style: subtitleStyle)),
-              pw.Divider(),
-              pw.Text("Tarih: ${DateTime.now().toString().substring(0, 16)}", style: normalStyle),
-              pw.Divider(),
-              ...items.map((item) {
-                return pw.Padding(
-                  padding: const pw.EdgeInsets.symmetric(vertical: 2),
-                  child: pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                    children: [
-                      pw.Expanded(child: pw.Text("${formatQty(item.quantity)}x ${item.productName}", maxLines: 1, style: normalStyle)),
-                      pw.Text("${item.lineTotal.toStringAsFixed(2)} ₺", style: normalStyle),
-                    ],
-                  ),
-                );
-              }),
-              if (totalDiscount > 0) ...[
-                pw.Divider(),
-                pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-                  pw.Text("İNDİRİM:", style: smallStyle),
-                  pw.Text("-${totalDiscount.toStringAsFixed(2)} ₺", style: smallStyle),
-                ]),
-              ],
-              pw.Divider(),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text("TOPLAM:", style: boldStyle),
-                  pw.Text("${total.toStringAsFixed(2)} ₺", style: boldStyle),
-                ],
-              ),
-              pw.Divider(),
-              pw.Center(
-                child: pw.Text(
-                  "Bu teklif bilgi amaçlıdır, fiyat değişikliği olabilir.",
-                  style: smallStyle,
-                  textAlign: pw.TextAlign.center,
-                ),
-              ),
+              pw.Expanded(child: pw.Text("${formatQty(item.quantity)}x ${item.productName}", maxLines: 1, style: normalStyle)),
+              pw.Text("${item.lineTotal.toStringAsFixed(2)} ₺", style: normalStyle),
             ],
-          );
-        },
+          ),
+        );
+      }),
+      if (totalDiscount > 0) ...[
+        pw.Divider(),
+        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+          pw.Text("İNDİRİM:", style: smallStyle),
+          pw.Text("-${totalDiscount.toStringAsFixed(2)} ₺", style: smallStyle),
+        ]),
+      ],
+      pw.Divider(),
+      pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text("TOPLAM:", style: boldStyle),
+          pw.Text("${total.toStringAsFixed(2)} ₺", style: boldStyle),
+        ],
       ),
-    );
+      pw.Divider(),
+      pw.Center(
+        child: pw.Text(
+          "Bu teklif bilgi amaçlıdır, fiyat değişikliği olabilir.",
+          style: smallStyle,
+          textAlign: pw.TextAlign.center,
+        ),
+      ),
+    ];
+
+    if (isA4) {
+      // A4: içerik tek sayfaya sığmazsa pw.MultiPage otomatik yeni sayfa ekler.
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: format,
+          build: (pw.Context context) => content,
+        ),
+      );
+    } else {
+      // Termal: sayfa yüksekliği zaten sonsuz, MultiPage'e gerek yok.
+      pdf.addPage(
+        pw.Page(
+          pageFormat: format,
+          build: (pw.Context context) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: content),
+        ),
+      );
+    }
 
     final filePath = await _getSavePath('Teklifler', 'Teklif_${DateTime.now().millisecondsSinceEpoch}.pdf');
     if (filePath == null) return null;

@@ -411,7 +411,7 @@ UI: Dark theme, CSS variables, responsive grid — tamamen Dart string interpola
 | `CartTransferService` | WS üzerinden sepet transferi; dialog, kabul/ret, boş sekmeye aktarma |
 | `SoundService` | Başarı, hata ve bildirim sesleri |
 | `VersionCheckService` | `GET /api/version` ile `min_app_version` uyum kontrolü (ayar web admin panelinden `/admin/settings` üzerinden yönetilir, v0.1.5 ve öncesi cihazlarda bu kontrol koşamaz — manuel güncelleme gerekir). v0.2.0'dan itibaren "GÜNCELLE" butonu GitHub Releases API'sinden platforma uygun asset'i (apk/exe/zip) bulup indirir; kurulum otomatik başlatılmaz — bkz. `docs/release-process.md` |
-| `PdfService` | Satış fişi PDF oluşturma |
+| `PdfService` | Satış fişi/fiyat teklifi PDF oluşturma; A4 modunda `pw.MultiPage` kullanır (uzun ürün listeleri otomatik ek sayfaya taşar), termal modda tek "sonsuz rulo" sayfa |
 | `ReceiptPrinterService` | Termal yazıcı ESC/POS komutları |
 | `ExcelService` | Ürün listesi ve satış verilerini Excel'e aktarma |
 
