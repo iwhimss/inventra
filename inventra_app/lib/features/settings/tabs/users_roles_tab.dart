@@ -12,6 +12,32 @@ import 'package:inventra_app/core/services/sound_service.dart';
 import 'package:inventra_app/features/auth/providers/auth_provider.dart';
 import 'package:inventra_app/core/utils/responsive_utils.dart';
 
+/// Uygulama içi (bu dosya) ve web admin panelindeki (`admin_handler.dart` →
+/// `_permLabels`) izin anahtarlarıyla birebir eşleşir.
+const Map<String, String> _kPermLabels = {
+  'pos': 'Satış Ekranı (POS)',
+  'products': 'Ürün Yönetimi',
+  'history': 'Geçmiş İşlemler',
+  'reports': 'Raporlar ve Analiz',
+  'labels': 'Etiket Tasarımı',
+  'settings': 'Ayarlar',
+  'converter': 'Dönüştürücü',
+  'movements': 'Hareketler',
+  'clients': 'Müşteri/Tedarikçi',
+  'modules': 'Modüller',
+};
+
+Map<String, bool> _staffDefaultPerms() => {
+      for (final k in _kPermLabels.keys) k: false,
+    }..['pos'] = true;
+
+List<Widget> _buildPermCheckboxes(Map<String, bool> perms, void Function(VoidCallback) setStateFn) {
+  return _kPermLabels.entries.map((e) => CheckboxListTile(
+    dense: true, title: Text(e.value, style: const TextStyle(fontSize: 13)), value: perms[e.key] ?? false,
+    onChanged: (v) => setStateFn(() => perms[e.key] = v ?? false),
+  )).toList();
+}
+
 class UsersRolesTab extends ConsumerStatefulWidget {
   const UsersRolesTab({super.key});
 
@@ -45,25 +71,6 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
   String _getUserName(Map<String, dynamic> user) {
     if (user['name'] != null && user['name'].toString().isNotEmpty) return user['name'].toString();
     return '';
-  }
-
-  List<Widget> _buildPermChecks(Map<String, bool> perms, void Function(void Function()) setDState) {
-    final Map<String, String> labels = {
-      'pos': 'Satış Ekranı (POS)',
-      'products': 'Ürün Yönetimi',
-      'history': 'Geçmiş İşlemler',
-      'reports': 'Raporlar ve Analiz',
-      'labels': 'Etiket Tasarımı',
-      'settings': 'Ayarlar',
-      'converter': 'Dönüştürücü',
-      'movements': 'Hareketler',
-      'clients': 'Müşteri/Tedarikçi',
-      'modules': 'Modüller',
-    };
-    return labels.entries.map((e) => CheckboxListTile(
-      dense: true, title: Text(e.value, style: const TextStyle(fontSize: 13)), value: perms[e.key] ?? false,
-      onChanged: (v) => setDState(() => perms[e.key] = v ?? false),
-    )).toList();
   }
 
   Future<String?> _askSavePath(String defaultName) async {
@@ -134,225 +141,16 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
   }
 
   void _showAddUserDialog() {
-    final staffIdCtrl = TextEditingController();
-    final nameCtrl = TextEditingController();
-    final passwordCtrl = TextEditingController();
-    String role = 'staff';
-    Map<String, bool> perms = {'pos': true, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false, 'modules': false};
-
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDState) => AlertDialog(
-          backgroundColor: AppTheme.panelBackground,
-          title: const Text('Yeni Kullanıcı'),
-          content: SizedBox(
-            width: ctx.dialogWidth(400),
-            child: SingleChildScrollView(child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Ad Soyad')),
-                const SizedBox(height: 12),
-                TextField(controller: staffIdCtrl, decoration: const InputDecoration(labelText: 'Personel ID'), keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly]),
-                const SizedBox(height: 12),
-                TextField(controller: passwordCtrl, decoration: const InputDecoration(labelText: 'Şifre'), obscureText: true),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: role,
-                  decoration: const InputDecoration(labelText: 'Rol'),
-                  dropdownColor: AppTheme.panelBackground,
-                  style: TextStyle(color: AppTheme.textMain),
-                  items: [
-                    DropdownMenuItem(value: 'owner', child: Text('Sahip', style: TextStyle(color: AppTheme.textMain))),
-                    DropdownMenuItem(value: 'manager', child: Text('Yönetici', style: TextStyle(color: AppTheme.textMain))),
-                    DropdownMenuItem(value: 'staff', child: Text('Personel', style: TextStyle(color: AppTheme.textMain))),
-                    ..._roles.map((r) => DropdownMenuItem(value: 'custom_${r['id']}', child: Text(r['name']?.toString() ?? '', style: TextStyle(color: AppTheme.textMain)))),
-                  ],
-                  onChanged: (v) => setDState(() {
-                    role = v ?? 'staff';
-                    if (role == 'owner' || role == 'manager') {
-                      perms = perms.map((k, _) => MapEntry(k, true));
-                    } else if (role.startsWith('custom_')) {
-                      final roleId = role.replaceFirst('custom_', '');
-                      final matchedRole = _roles.firstWhere((r) => r['id']?.toString() == roleId, orElse: () => <String, dynamic>{});
-                      if (matchedRole.isNotEmpty) {
-                        try {
-                          final rolePerms = (json.decode(matchedRole['permissions']?.toString() ?? '{}') as Map<String, dynamic>);
-                          perms = perms.map((k, _) => MapEntry(k, rolePerms[k] == true));
-                        } catch (_) {}
-                      }
-                    } else {
-                      // 'staff': varsayılan personel izinlerine sıfırla
-                      perms = {'pos': true, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false, 'modules': false};
-                    }
-                  }),
-                ),
-                const SizedBox(height: 16),
-                const Align(alignment: Alignment.centerLeft, child: Text('Yetkiler:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                ..._buildPermChecks(perms, setDState),
-              ],
-            )),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
-            ElevatedButton(
-              onPressed: () async {
-                if (staffIdCtrl.text.isEmpty || passwordCtrl.text.isEmpty) return;
-                try {
-                  final resp = await ApiClient.instance.post('/api/users', {
-                    'staff_id': staffIdCtrl.text,
-                    'name': nameCtrl.text,
-                    'password_hash': passwordCtrl.text,
-                    'role': role,
-                    'permissions': json.encode(perms),
-                  });
-                  if (!resp.success) throw Exception(resp.error ?? 'API Hatası');
-                  Navigator.pop(ctx);
-                  await _loadAll();
-                } catch (e) {
-                  if (mounted) NotificationService.showError('Hata: $e');
-                }
-              },
-              child: const Text('EKLE'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => _AddUserDialog(existingRoles: _roles, onSaved: _loadAll),
     );
   }
 
   void _showEditUserDialog(Map<String, dynamic> user) {
-    final passwordCtrl = TextEditingController();
-    final rawRole = user['role']?.toString() ?? 'staff';
-    String role;
-    if (['owner', 'manager', 'staff'].contains(rawRole)) {
-      role = rawRole;
-    } else if (rawRole.startsWith('custom_')) {
-      final roleId = rawRole.replaceFirst('custom_', '');
-      final exists = _roles.any((r) => r['id']?.toString() == roleId);
-      role = exists ? rawRole : 'staff';
-    } else {
-      role = 'staff';
-    }
-    final nameCtrl = TextEditingController(text: _getUserName(user));
-    final staffIdCtrl = TextEditingController(text: user['staff_id']?.toString() ?? '');
-
-    // Tüm izin anahtarlarının başlangıç değerleri (eksik key'ler için false varsayılanı)
-    const _basePerms = {'pos': false, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false, 'modules': false};
-    Map<String, bool> perms;
-    try {
-      final rawPerms = user['permissions'];
-      if (rawPerms is Map) {
-        // Sunucudan zaten decode edilmiş bir Map gelmiş olabilir (String beklemek yerine doğrudan ele al)
-        final parsed = Map<String, dynamic>.from(rawPerms).map((k, v) => MapEntry(k, v == true));
-        perms = {..._basePerms, ...parsed};
-      } else if ((rawPerms?.toString() ?? '').startsWith('{')) {
-        final pStr = rawPerms.toString();
-        final parsed = (json.decode(pStr) as Map<String, dynamic>).map((k, v) => MapEntry(k, v == true));
-        // DB'deki eski izin formatında eksik key'ler olabilir; merge ile tamamla
-        perms = {..._basePerms, ...parsed};
-      } else {
-        final isPriv = role == 'owner' || role == 'manager';
-        perms = {..._basePerms, 'products': isPriv, 'history': isPriv, 'reports': isPriv, 'labels': isPriv, 'settings': isPriv, 'converter': isPriv, 'movements': isPriv, 'clients': isPriv, 'modules': isPriv, 'pos': true};
-      }
-    } catch (_) {
-      perms = Map.of(_basePerms);
-    }
-
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDState) => AlertDialog(
-          backgroundColor: AppTheme.panelBackground,
-          title: Text('Kullanıcı Düzenle: ${user['staff_id']}'),
-          content: SizedBox(
-            width: ctx.dialogWidth(400),
-            child: SingleChildScrollView(child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Ad Soyad')),
-                const SizedBox(height: 12),
-                TextField(controller: staffIdCtrl, decoration: const InputDecoration(labelText: 'Personel ID'), readOnly: true),
-                const SizedBox(height: 12),
-                TextField(controller: passwordCtrl, decoration: const InputDecoration(labelText: 'Yeni Şifre (boş = değişmez)'), obscureText: true),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: role,
-                  decoration: const InputDecoration(labelText: 'Rol'),
-                  dropdownColor: AppTheme.panelBackground,
-                  style: TextStyle(color: AppTheme.textMain),
-                  items: [
-                    DropdownMenuItem(value: 'owner', child: Text('Sahip', style: TextStyle(color: AppTheme.textMain))),
-                    DropdownMenuItem(value: 'manager', child: Text('Yönetici', style: TextStyle(color: AppTheme.textMain))),
-                    DropdownMenuItem(value: 'staff', child: Text('Personel', style: TextStyle(color: AppTheme.textMain))),
-                    ..._roles.map((r) => DropdownMenuItem(value: 'custom_${r['id']}', child: Text(r['name']?.toString() ?? '', style: TextStyle(color: AppTheme.textMain)))),
-                  ],
-                  onChanged: (v) => setDState(() {
-                    role = v ?? 'staff';
-                    if (role == 'owner' || role == 'manager') {
-                      perms = perms.map((k, _) => MapEntry(k, true));
-                    } else if (role.startsWith('custom_')) {
-                      final roleId = role.replaceFirst('custom_', '');
-                      final matchedRole = _roles.firstWhere((r) => r['id']?.toString() == roleId, orElse: () => <String, dynamic>{});
-                      if (matchedRole.isNotEmpty) {
-                        try {
-                          final rolePerms = (json.decode(matchedRole['permissions']?.toString() ?? '{}') as Map<String, dynamic>);
-                          perms = perms.map((k, _) => MapEntry(k, rolePerms[k] == true));
-                        } catch (_) {}
-                      }
-                    } else {
-                      // 'staff': varsayılan personel izinlerine sıfırla
-                      perms = {'pos': true, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false, 'modules': false};
-                    }
-                  }),
-                ),
-                const SizedBox(height: 16),
-                const Align(alignment: Alignment.centerLeft, child: Text('Yetkiler:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                ..._buildPermChecks(perms, setDState),
-              ],
-            )),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                final confirm = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
-                  title: const Text('Sil?'),
-                  content: Text('${user['staff_id']} silinecek. Emin misiniz?'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Hayır')),
-                    ElevatedButton(onPressed: () => Navigator.pop(c, true), style: ElevatedButton.styleFrom(backgroundColor: AppTheme.dangerAccent), child: const Text('SİL')),
-                  ],
-                ));
-                if (confirm == true) {
-                  final resp = await ApiClient.instance.delete('/api/users/${user['id']}');
-                  if (!resp.success && mounted) NotificationService.showError('Hata: ${resp.error}');
-                  Navigator.pop(ctx);
-                  await _loadAll();
-                }
-              },
-              child: Text('SİL', style: TextStyle(color: AppTheme.dangerAccent)),
-            ),
-            const Spacer(),
-            TextButton(onPressed: () => Navigator.pop(ctx), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
-            ElevatedButton(
-              onPressed: () async {
-                final Map<String, dynamic> data = {
-                  'name': nameCtrl.text,
-                  'role': role,
-                  'permissions': json.encode(perms)
-                };
-                if (passwordCtrl.text.isNotEmpty) data['password_hash'] = passwordCtrl.text;
-
-                final resp = await ApiClient.instance.put('/api/users/${user['id']}', data);
-                if (!resp.success && mounted) NotificationService.showError('Hata: ${resp.error}');
-                Navigator.pop(ctx);
-                await _loadAll();
-              },
-              child: const Text('GÜNCELLE'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => _EditUserDialog(user: user, existingRoles: _roles, onSaved: _loadAll),
     );
   }
 
@@ -403,126 +201,16 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
   }
 
   void _showAddRoleDialog() {
-    final nameCtrl = TextEditingController();
-    Map<String, bool> perms = {'pos': true, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false, 'modules': false};
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDState) => AlertDialog(
-          backgroundColor: AppTheme.panelBackground,
-          title: const Text('Yeni Rol'),
-          content: SizedBox(
-            width: ctx.dialogWidth(400),
-            child: SingleChildScrollView(child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Rol Adı')),
-                const SizedBox(height: 16),
-                const Align(alignment: Alignment.centerLeft, child: Text('Yetkiler:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                ..._buildPermChecks(perms, setDState),
-              ],
-            )),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
-            ElevatedButton(
-              onPressed: () async {
-                if (nameCtrl.text.isEmpty) return;
-                try {
-                  final resp = await ApiClient.instance.post('/api/roles', {
-                    'name': nameCtrl.text,
-                    'permissions': json.encode(perms),
-                  });
-                  if (!resp.success) throw Exception(resp.error ?? 'API Hatası');
-                  Navigator.pop(ctx);
-                  await _loadAll();
-                  if (mounted) {
-                    SoundService.playNotification();
-                    NotificationService.showSuccess('Rol "${nameCtrl.text}" oluşturuldu.');
-                  }
-                } catch (e) {
-                  if (mounted) NotificationService.showError('Hata: $e');
-                }
-              },
-              child: const Text('EKLE'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => _AddRoleDialog(onSaved: _loadAll),
     );
   }
 
   void _showEditRoleDialog(Map<String, dynamic> role) {
-    final nameCtrl = TextEditingController(text: role['name']?.toString() ?? '');
-    // Tüm izin anahtarlarının başlangıç değerleri (eksik/bozuk veri için tam güvenli varsayılan)
-    const basePerms = {'pos': true, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false, 'modules': false};
-    Map<String, bool> perms;
-    try {
-      final raw = role['permissions'];
-      final Map<String, dynamic> decoded;
-      if (raw is Map) {
-        // Sunucudan zaten decode edilmiş bir Map gelmiş olabilir (String beklemek yerine doğrudan ele al)
-        decoded = Map<String, dynamic>.from(raw);
-      } else {
-        final str = raw?.toString() ?? '{}';
-        decoded = str.isEmpty ? {} : (json.decode(str) as Map<String, dynamic>);
-      }
-      perms = {...basePerms, ...decoded.map((k, v) => MapEntry(k, v == true))};
-    } catch (_) {
-      perms = Map.of(basePerms);
-    }
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDState) => AlertDialog(
-          backgroundColor: AppTheme.panelBackground,
-          title: Text('Rol Düzenle: ${role['name']}'),
-          content: SizedBox(
-            width: ctx.dialogWidth(400),
-            child: SingleChildScrollView(child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Rol Adı')),
-                const SizedBox(height: 16),
-                const Align(alignment: Alignment.centerLeft, child: Text('Yetkiler:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
-                ..._buildPermChecks(perms, setDState),
-              ],
-            )),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                final confirm = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
-                  title: const Text('Rolü Sil?'),
-                  content: Text('"${role['name']}" silinecek. Emin misiniz?'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Hayır')),
-                    ElevatedButton(onPressed: () => Navigator.pop(c, true), style: ElevatedButton.styleFrom(backgroundColor: AppTheme.dangerAccent), child: const Text('SİL')),
-                  ],
-                ));
-                if (confirm == true) {
-                  final resp = await ApiClient.instance.delete('/api/roles/${role['id']}');
-                  if (!resp.success && mounted) NotificationService.showError('Hata: ${resp.error}');
-                  Navigator.pop(ctx);
-                  await _loadAll();
-                }
-              },
-              child: Text('SİL', style: TextStyle(color: AppTheme.dangerAccent)),
-            ),
-            const Spacer(),
-            TextButton(onPressed: () => Navigator.pop(ctx), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
-            ElevatedButton(
-              onPressed: () async {
-                final resp = await ApiClient.instance.put('/api/roles/${role['id']}', {'name': nameCtrl.text, 'permissions': json.encode(perms)});
-                if (!resp.success && mounted) NotificationService.showError('Hata: ${resp.error}');
-                Navigator.pop(ctx);
-                await _loadAll();
-              },
-              child: const Text('GÜNCELLE'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => _EditRoleDialog(role: role, onSaved: _loadAll),
     );
   }
 
@@ -637,6 +325,402 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
                   },
                 ),
         ),
+      ],
+    );
+  }
+}
+
+// ─── Kullanıcı/Rol Ekle-Düzenle Dialogları ────────────────────────────────
+// v0.2.2: Bu 4 dialog daha önce showDialog+StatefulBuilder içinde, dış
+// metodun yerel değişkenlerini (`role`, `perms`) yakalayan mutable closure'lar
+// olarak yazılıyordu. Bu desen kırılgan olduğu ve teşhisi zor bir
+// StackOverflowError'a yol açtığı için (bkz. .plan/v0.2.2.md), state'i kendi
+// State sınıflarının instance alanlarında tutan gerçek StatefulWidget'lara
+// dönüştürüldü.
+
+String _roleForUser(Map<String, dynamic> user, List<Map<String, dynamic>> existingRoles) {
+  final rawRole = user['role']?.toString() ?? 'staff';
+  if (['owner', 'manager', 'staff'].contains(rawRole)) return rawRole;
+  if (rawRole.startsWith('custom_')) {
+    final roleId = rawRole.replaceFirst('custom_', '');
+    final exists = existingRoles.any((r) => r['id']?.toString() == roleId);
+    return exists ? rawRole : 'staff';
+  }
+  return 'staff';
+}
+
+Map<String, bool> _permsForRoleChange(String role, List<Map<String, dynamic>> existingRoles, Map<String, bool> current) {
+  if (role == 'owner' || role == 'manager') {
+    return current.map((k, _) => MapEntry(k, true));
+  } else if (role.startsWith('custom_')) {
+    final roleId = role.replaceFirst('custom_', '');
+    final matchedRole = existingRoles.firstWhere((r) => r['id']?.toString() == roleId, orElse: () => <String, dynamic>{});
+    if (matchedRole.isEmpty) return current;
+    try {
+      final rolePerms = json.decode(matchedRole['permissions']?.toString() ?? '{}') as Map<String, dynamic>;
+      return current.map((k, _) => MapEntry(k, rolePerms[k] == true));
+    } catch (_) {
+      return current;
+    }
+  }
+  return _staffDefaultPerms();
+}
+
+Widget _roleDropdown({
+  required String value,
+  required List<Map<String, dynamic>> existingRoles,
+  required ValueChanged<String> onChanged,
+}) {
+  return DropdownButtonFormField<String>(
+    initialValue: value,
+    decoration: const InputDecoration(labelText: 'Rol'),
+    dropdownColor: AppTheme.panelBackground,
+    style: TextStyle(color: AppTheme.textMain),
+    items: [
+      DropdownMenuItem(value: 'owner', child: Text('Sahip', style: TextStyle(color: AppTheme.textMain))),
+      DropdownMenuItem(value: 'manager', child: Text('Yönetici', style: TextStyle(color: AppTheme.textMain))),
+      DropdownMenuItem(value: 'staff', child: Text('Personel', style: TextStyle(color: AppTheme.textMain))),
+      ...existingRoles.map((r) => DropdownMenuItem(value: 'custom_${r['id']}', child: Text(r['name']?.toString() ?? '', style: TextStyle(color: AppTheme.textMain)))),
+    ],
+    onChanged: (v) => onChanged(v ?? 'staff'),
+  );
+}
+
+class _AddUserDialog extends StatefulWidget {
+  final List<Map<String, dynamic>> existingRoles;
+  final Future<void> Function() onSaved;
+  const _AddUserDialog({required this.existingRoles, required this.onSaved});
+
+  @override
+  State<_AddUserDialog> createState() => _AddUserDialogState();
+}
+
+class _AddUserDialogState extends State<_AddUserDialog> {
+  final _staffIdCtrl = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  String _role = 'staff';
+  late Map<String, bool> _perms = _staffDefaultPerms();
+
+  @override
+  void dispose() {
+    _staffIdCtrl.dispose();
+    _nameCtrl.dispose();
+    _passwordCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_staffIdCtrl.text.isEmpty || _passwordCtrl.text.isEmpty) return;
+    try {
+      final resp = await ApiClient.instance.post('/api/users', {
+        'staff_id': _staffIdCtrl.text,
+        'name': _nameCtrl.text,
+        'password_hash': _passwordCtrl.text,
+        'role': _role,
+        'permissions': json.encode(_perms),
+      });
+      if (!resp.success) throw Exception(resp.error ?? 'API Hatası');
+      if (mounted) Navigator.pop(context);
+      await widget.onSaved();
+    } catch (e) {
+      if (mounted) NotificationService.showError('Hata: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppTheme.panelBackground,
+      title: const Text('Yeni Kullanıcı'),
+      content: SizedBox(
+        width: context.dialogWidth(400),
+        child: SingleChildScrollView(child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'Ad Soyad')),
+            const SizedBox(height: 12),
+            TextField(controller: _staffIdCtrl, decoration: const InputDecoration(labelText: 'Personel ID'), keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly]),
+            const SizedBox(height: 12),
+            TextField(controller: _passwordCtrl, decoration: const InputDecoration(labelText: 'Şifre'), obscureText: true),
+            const SizedBox(height: 12),
+            _roleDropdown(
+              value: _role,
+              existingRoles: widget.existingRoles,
+              onChanged: (v) => setState(() {
+                _role = v;
+                _perms = _permsForRoleChange(_role, widget.existingRoles, _perms);
+              }),
+            ),
+            const SizedBox(height: 16),
+            const Align(alignment: Alignment.centerLeft, child: Text('Yetkiler:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+            ..._buildPermCheckboxes(_perms, setState),
+          ],
+        )),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
+        ElevatedButton(onPressed: _save, child: const Text('EKLE')),
+      ],
+    );
+  }
+}
+
+class _EditUserDialog extends StatefulWidget {
+  final Map<String, dynamic> user;
+  final List<Map<String, dynamic>> existingRoles;
+  final Future<void> Function() onSaved;
+  const _EditUserDialog({required this.user, required this.existingRoles, required this.onSaved});
+
+  @override
+  State<_EditUserDialog> createState() => _EditUserDialogState();
+}
+
+class _EditUserDialogState extends State<_EditUserDialog> {
+  final _passwordCtrl = TextEditingController();
+  late final _nameCtrl = TextEditingController(text: widget.user['name']?.toString() ?? '');
+  late final _staffIdCtrl = TextEditingController(text: widget.user['staff_id']?.toString() ?? '');
+  late String _role = _roleForUser(widget.user, widget.existingRoles);
+  late Map<String, bool> _perms = _parseInitialPerms();
+
+  Map<String, bool> _parseInitialPerms() {
+    final basePerms = {for (final k in _kPermLabels.keys) k: false};
+    try {
+      final rawPerms = widget.user['permissions'];
+      if (rawPerms is Map) {
+        final parsed = Map<String, dynamic>.from(rawPerms).map((k, v) => MapEntry(k, v == true));
+        return {...basePerms, ...parsed};
+      } else if ((rawPerms?.toString() ?? '').startsWith('{')) {
+        final parsed = (json.decode(rawPerms.toString()) as Map<String, dynamic>).map((k, v) => MapEntry(k, v == true));
+        return {...basePerms, ...parsed};
+      } else {
+        final isPriv = _role == 'owner' || _role == 'manager';
+        return {...basePerms, for (final k in basePerms.keys) k: k == 'pos' ? true : isPriv};
+      }
+    } catch (_) {
+      return basePerms;
+    }
+  }
+
+  @override
+  void dispose() {
+    _passwordCtrl.dispose();
+    _nameCtrl.dispose();
+    _staffIdCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _delete() async {
+    final confirm = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+      title: const Text('Sil?'),
+      content: Text('${widget.user['staff_id']} silinecek. Emin misiniz?'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Hayır')),
+        ElevatedButton(onPressed: () => Navigator.pop(c, true), style: ElevatedButton.styleFrom(backgroundColor: AppTheme.dangerAccent), child: const Text('SİL')),
+      ],
+    ));
+    if (confirm != true) return;
+    final resp = await ApiClient.instance.delete('/api/users/${widget.user['id']}');
+    if (!resp.success && mounted) NotificationService.showError('Hata: ${resp.error}');
+    if (mounted) Navigator.pop(context);
+    await widget.onSaved();
+  }
+
+  Future<void> _save() async {
+    final Map<String, dynamic> data = {
+      'name': _nameCtrl.text,
+      'role': _role,
+      'permissions': json.encode(_perms),
+    };
+    if (_passwordCtrl.text.isNotEmpty) data['password_hash'] = _passwordCtrl.text;
+
+    final resp = await ApiClient.instance.put('/api/users/${widget.user['id']}', data);
+    if (!resp.success && mounted) NotificationService.showError('Hata: ${resp.error}');
+    if (mounted) Navigator.pop(context);
+    await widget.onSaved();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppTheme.panelBackground,
+      title: Text('Kullanıcı Düzenle: ${widget.user['staff_id']}'),
+      content: SizedBox(
+        width: context.dialogWidth(400),
+        child: SingleChildScrollView(child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'Ad Soyad')),
+            const SizedBox(height: 12),
+            TextField(controller: _staffIdCtrl, decoration: const InputDecoration(labelText: 'Personel ID'), readOnly: true),
+            const SizedBox(height: 12),
+            TextField(controller: _passwordCtrl, decoration: const InputDecoration(labelText: 'Yeni Şifre (boş = değişmez)'), obscureText: true),
+            const SizedBox(height: 12),
+            _roleDropdown(
+              value: _role,
+              existingRoles: widget.existingRoles,
+              onChanged: (v) => setState(() {
+                _role = v;
+                _perms = _permsForRoleChange(_role, widget.existingRoles, _perms);
+              }),
+            ),
+            const SizedBox(height: 16),
+            const Align(alignment: Alignment.centerLeft, child: Text('Yetkiler:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+            ..._buildPermCheckboxes(_perms, setState),
+          ],
+        )),
+      ),
+      actions: [
+        TextButton(onPressed: _delete, child: Text('SİL', style: TextStyle(color: AppTheme.dangerAccent))),
+        const Spacer(),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
+        ElevatedButton(onPressed: _save, child: const Text('GÜNCELLE')),
+      ],
+    );
+  }
+}
+
+class _AddRoleDialog extends StatefulWidget {
+  final Future<void> Function() onSaved;
+  const _AddRoleDialog({required this.onSaved});
+
+  @override
+  State<_AddRoleDialog> createState() => _AddRoleDialogState();
+}
+
+class _AddRoleDialogState extends State<_AddRoleDialog> {
+  final _nameCtrl = TextEditingController();
+  late Map<String, bool> _perms = _staffDefaultPerms();
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_nameCtrl.text.isEmpty) return;
+    try {
+      final resp = await ApiClient.instance.post('/api/roles', {
+        'name': _nameCtrl.text,
+        'permissions': json.encode(_perms),
+      });
+      if (!resp.success) throw Exception(resp.error ?? 'API Hatası');
+      if (mounted) Navigator.pop(context);
+      await widget.onSaved();
+      SoundService.playNotification();
+      NotificationService.showSuccess('Rol "${_nameCtrl.text}" oluşturuldu.');
+    } catch (e) {
+      if (mounted) NotificationService.showError('Hata: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppTheme.panelBackground,
+      title: const Text('Yeni Rol'),
+      content: SizedBox(
+        width: context.dialogWidth(400),
+        child: SingleChildScrollView(child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'Rol Adı')),
+            const SizedBox(height: 16),
+            const Align(alignment: Alignment.centerLeft, child: Text('Yetkiler:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+            ..._buildPermCheckboxes(_perms, setState),
+          ],
+        )),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
+        ElevatedButton(onPressed: _save, child: const Text('EKLE')),
+      ],
+    );
+  }
+}
+
+class _EditRoleDialog extends StatefulWidget {
+  final Map<String, dynamic> role;
+  final Future<void> Function() onSaved;
+  const _EditRoleDialog({required this.role, required this.onSaved});
+
+  @override
+  State<_EditRoleDialog> createState() => _EditRoleDialogState();
+}
+
+class _EditRoleDialogState extends State<_EditRoleDialog> {
+  late final _nameCtrl = TextEditingController(text: widget.role['name']?.toString() ?? '');
+  late Map<String, bool> _perms = _parseInitialPerms();
+
+  Map<String, bool> _parseInitialPerms() {
+    final basePerms = {for (final k in _kPermLabels.keys) k: false}..['pos'] = true;
+    try {
+      final raw = widget.role['permissions'];
+      final Map<String, dynamic> decoded;
+      if (raw is Map) {
+        decoded = Map<String, dynamic>.from(raw);
+      } else {
+        final str = raw?.toString() ?? '{}';
+        decoded = str.isEmpty ? {} : (json.decode(str) as Map<String, dynamic>);
+      }
+      return {...basePerms, ...decoded.map((k, v) => MapEntry(k, v == true))};
+    } catch (_) {
+      return basePerms;
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _delete() async {
+    final confirm = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+      title: const Text('Rolü Sil?'),
+      content: Text('"${widget.role['name']}" silinecek. Emin misiniz?'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Hayır')),
+        ElevatedButton(onPressed: () => Navigator.pop(c, true), style: ElevatedButton.styleFrom(backgroundColor: AppTheme.dangerAccent), child: const Text('SİL')),
+      ],
+    ));
+    if (confirm != true) return;
+    final resp = await ApiClient.instance.delete('/api/roles/${widget.role['id']}');
+    if (!resp.success && mounted) NotificationService.showError('Hata: ${resp.error}');
+    if (mounted) Navigator.pop(context);
+    await widget.onSaved();
+  }
+
+  Future<void> _save() async {
+    final resp = await ApiClient.instance.put('/api/roles/${widget.role['id']}', {'name': _nameCtrl.text, 'permissions': json.encode(_perms)});
+    if (!resp.success && mounted) NotificationService.showError('Hata: ${resp.error}');
+    if (mounted) Navigator.pop(context);
+    await widget.onSaved();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppTheme.panelBackground,
+      title: Text('Rol Düzenle: ${widget.role['name']}'),
+      content: SizedBox(
+        width: context.dialogWidth(400),
+        child: SingleChildScrollView(child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'Rol Adı')),
+            const SizedBox(height: 16),
+            const Align(alignment: Alignment.centerLeft, child: Text('Yetkiler:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13))),
+            ..._buildPermCheckboxes(_perms, setState),
+          ],
+        )),
+      ),
+      actions: [
+        TextButton(onPressed: _delete, child: Text('SİL', style: TextStyle(color: AppTheme.dangerAccent))),
+        const Spacer(),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
+        ElevatedButton(onPressed: _save, child: const Text('GÜNCELLE')),
       ],
     );
   }

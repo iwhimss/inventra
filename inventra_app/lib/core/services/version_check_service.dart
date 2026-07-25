@@ -2,10 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:window_manager/window_manager.dart';
 import 'package:inventra_app/core/network/api_client.dart';
 import 'package:inventra_app/core/theme/app_theme.dart';
 
@@ -69,6 +72,17 @@ class VersionCheckService {
             'Bu sunucu en az $minVersion sürümünü gerektiriyor. Devam etmek için uygulamayı güncellemeniz gerekiyor.',
           ),
           actions: [
+            TextButton.icon(
+              onPressed: () {
+                if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+                  windowManager.close();
+                } else {
+                  SystemNavigator.pop();
+                }
+              },
+              icon: Icon(Icons.close, size: 16, color: AppTheme.textMuted),
+              label: Text('UYGULAMAYI KAPAT', style: TextStyle(color: AppTheme.textMuted)),
+            ),
             ElevatedButton.icon(
               onPressed: () => _startUpdateFlow(ctx, minVersion),
               icon: const Icon(Icons.system_update, size: 16),

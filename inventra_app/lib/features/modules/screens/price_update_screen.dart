@@ -55,24 +55,35 @@ class _PriceUpdateScreenState extends ConsumerState<PriceUpdateScreen> {
   double get _vat => double.tryParse(_vatCtrl.text.replaceAll(',', '.')) ?? 0;
   double get _profit => double.tryParse(_profitCtrl.text.replaceAll(',', '.')) ?? 0;
 
-  double _computeFromListPrice(double listPrice) {
+  /// Yuvarlanmış (satışta kullanılacak) ve yuvarlanmamış (referans) sonucu birlikte döner.
+  ({double rounded, double raw}) _computeFromListPrice(double listPrice) {
     final afterDiscount = listPrice * (1 - _discount / 100);
     final afterVat = afterDiscount * (1 + _vat / 100);
     final afterProfit = afterVat * (1 + _profit / 100);
-    return afterProfit.round().toDouble();
+    return (rounded: afterProfit.round().toDouble(), raw: afterProfit);
   }
 
-  double? _computeNewPrice(_PriceLine line) {
+  ({double rounded, double raw})? _computeNewPrice(_PriceLine line) {
     final listPrice = double.tryParse(line.newListPriceCtrl.text.replaceAll(',', '.'));
     if (listPrice == null || listPrice <= 0) return null;
     return _computeFromListPrice(listPrice);
   }
 
   /// Ürün seçmeden, sadece fiyat girerek yapılan bağımsız hızlı hesap sonucu.
-  double? get _quickResult {
+  ({double rounded, double raw})? get _quickResult {
     final listPrice = double.tryParse(_quickPriceCtrl.text.replaceAll(',', '.'));
     if (listPrice == null || listPrice <= 0) return null;
     return _computeFromListPrice(listPrice);
+  }
+
+  /// Virgülden sonra en fazla 4 hane, gereksiz sondaki sıfırlar temizlenerek.
+  String _formatRaw(double value) {
+    String s = value.toStringAsFixed(4);
+    if (s.contains('.')) {
+      s = s.replaceFirst(RegExp(r'0+$'), '');
+      s = s.replaceFirst(RegExp(r'\.$'), '');
+    }
+    return s;
   }
 
   Future<void> _confirmClearAll() async {
@@ -141,7 +152,7 @@ class _PriceUpdateScreenState extends ConsumerState<PriceUpdateScreen> {
     int failed = 0;
     final notifier = ref.read(productProvider.notifier);
     for (final line in ready) {
-      final newPrice = _computeNewPrice(line)!;
+      final newPrice = _computeNewPrice(line)!.rounded;
       final ok = await notifier.updateProduct(line.product.copyWith(salePrice: newPrice));
       if (ok) {
         updated++;
@@ -286,7 +297,14 @@ class _PriceUpdateScreenState extends ConsumerState<PriceUpdateScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(color: AppTheme.secondaryAccent.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
-              child: Text('${_quickResult!.toStringAsFixed(0)} ₺', style: TextStyle(color: AppTheme.secondaryAccent, fontWeight: FontWeight.w900, fontSize: 18)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('${_quickResult!.rounded.toStringAsFixed(0)} ₺', style: TextStyle(color: AppTheme.secondaryAccent, fontWeight: FontWeight.w900, fontSize: 18)),
+                  Text('(yuvarlanmamış: ${_formatRaw(_quickResult!.raw)} ₺)', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                ],
+              ),
             ),
         ],
       ),
@@ -387,7 +405,10 @@ class _PriceUpdateScreenState extends ConsumerState<PriceUpdateScreen> {
                       ),
                     ),
                     if (newPrice != null)
-                      Text('Yeni: ${newPrice.toStringAsFixed(0)} ₺', style: TextStyle(color: AppTheme.secondaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                      Text(
+                        'Yeni: ${newPrice.rounded.toStringAsFixed(0)} ₺ (${_formatRaw(newPrice.raw)} ₺)',
+                        style: TextStyle(color: AppTheme.secondaryAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
                   ],
                 ),
               ],

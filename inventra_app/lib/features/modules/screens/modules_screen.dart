@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:inventra_app/core/theme/app_theme.dart';
 import 'package:inventra_app/features/modules/screens/price_update_screen.dart';
+import 'package:inventra_app/features/modules/screens/invoice_prep_screen.dart';
 
 class _ModuleDef {
   final IconData icon;
@@ -23,6 +24,13 @@ class ModulesScreen extends StatelessWidget {
       subtitle: 'İskonto, KDV ve kâr oranına göre yeni satış fiyatı hesapla',
       color: AppTheme.primaryAccent,
       builder: (_) => const PriceUpdateScreen(),
+    ),
+    _ModuleDef(
+      icon: Icons.receipt_long_outlined,
+      title: 'Fatura Hazırlama',
+      subtitle: 'Ürün seç, KDV/birim fiyat hesapla, e-fatura portalına girmek için liste hazırla',
+      color: AppTheme.secondaryAccent,
+      builder: (_) => const InvoicePrepScreen(),
     ),
   ];
 

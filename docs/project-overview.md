@@ -289,7 +289,7 @@ MainDashboard
 └── Ayarlar
 ```
 
-Her sekme `permKey` ile izin sistemine bağlıdır (10 izin anahtarı — bkz. Kullanıcılar & Roller bölümü).
+Her sekme `permKey` ile izin sistemine bağlıdır (10 izin anahtarı — bkz. Kullanıcılar & Roller bölümü). Kullanıcı/rol ekle-düzenle dialogları (`settings/tabs/users_roles_tab.dart`) v0.2.2'de `StatefulBuilder` closure'larından ayrı `StatefulWidget` sınıflarına (`_AddUserDialog`, `_EditUserDialog`, `_AddRoleDialog`, `_EditRoleDialog`) taşındı — bir StackOverflow bug'ına yol açan kırılgan mutable-closure deseni ortadan kaldırıldı.
 
 ### POS Ekranı
 
@@ -314,11 +314,12 @@ En kritik ekran. 5 paralel sepet sekmesi destekler (aynı anda 5 farklı müşte
 - Kritik stok uyarısı seviyesi
 - Barkod desteği (harici okuyucu veya kamera)
 
-### Modüller (v0.2.1)
+### Modüller (v0.2.1, v0.2.2'de genişletildi)
 
 Genişleyebilir ek sistemler sayfası (`modules_screen.dart`) — `_ModuleDef` listesine yeni bir kart eklemek yeni bir modül eklemek için yeterli.
 
-- **Fiyat Güncelleme** (`price_update_screen.dart`) — toptancının yeni fiyat listesindeki tutarı, İskonto/KDV/Kâr (%) oranlarına göre otomatik hesaplayıp ürünün satış fiyatını günceller: `sonuç = round(yeni_fiyat × (1 − iskonto/100) × (1 + kdv/100) × (1 + kar/100))`. Ürün arama, POS ekranıyla aynı eşleştirme mantığını kullanan paylaşılan `core/utils/product_search.dart` yardımcısı üzerinden yapılır (isim/barkod/alias barkod/anahtar kelime, barkod kamerası dahil). Birden fazla ürün seçilip tek seferde toplu güncellenebilir.
+- **Fiyat Güncelleme** (`price_update_screen.dart`) — toptancının yeni fiyat listesindeki tutarı, İskonto/KDV/Kâr (%) oranlarına göre otomatik hesaplayıp ürünün satış fiyatını günceller: `sonuç = round(yeni_fiyat × (1 − iskonto/100) × (1 + kdv/100) × (1 + kar/100))`. Ürün arama, POS ekranıyla aynı eşleştirme mantığını kullanan paylaşılan `core/utils/product_search.dart` yardımcısı üzerinden yapılır (isim/barkod/alias barkod/anahtar kelime, barkod kamerası dahil). Birden fazla ürün seçilip tek seferde toplu güncellenebilir. v0.2.2: yuvarlanmamış (4 haneli) değer de gösterilir.
+- **Fatura Hazırlama** (`invoice_prep_screen.dart`, v0.2.2) — e-fatura portallerine (örn. luca.com.tr) elle veri girerken kullanılacak bir ürün listesi hazırlar: ürün seç → birim/miktar/KDV%/KDV dahil satış fiyatı gir (hepsi düzenlenebilir, ürün verisinden otomatik dolduruluyor) → KDV hariç birim fiyat otomatik hesaplanır. Hedef tutara manuel (satır fiyatlarını elle düzenleyerek) veya otomatik (en ucuz satırdan başlayıp orijinal fiyatın %50-%150 aralığında kalarak) yaklaştırma desteği var. Liste Excel'e yapıştırılabilir formatta panoya kopyalanır. **Otomatik form doldurma/tarayıcı eklentisi bu sürümde yok** — ayrı bir sürümde, hedef portalın gerçek DOM yapısı incelenerek planlanacak.
 
 ### Analitik & Raporlar
 
