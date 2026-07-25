@@ -505,6 +505,18 @@ class ServerDatabaseHelper {
       _db.execute('CREATE INDEX IF NOT EXISTS idx_returns_sale_id ON returns(sale_id)');
       _db.execute('CREATE INDEX IF NOT EXISTS idx_return_items_return_id ON return_items(return_id)');
     } catch (_) {}
+
+    // Migration 16: Fatura Hazırlama tarayıcı eklentisi köprüsü — invoice_exports tablosu
+    try {
+      _db.execute('''
+        CREATE TABLE IF NOT EXISTS invoice_exports (
+          id TEXT PRIMARY KEY,
+          payload TEXT NOT NULL,
+          created_at TEXT,
+          consumed_at TEXT
+        )
+      ''');
+    } catch (_) {}
   }
 
   // ─── Convenience Query Methods ──────────────────────────────

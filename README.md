@@ -16,7 +16,7 @@
 - **Etiket Tasarımcısı** — Özelleştirilebilir ürün etiketi şablonları
 - **Modüller** — Genişleyebilir ek sistemler sayfası:
   - **Fiyat Güncelleme** — toptancı fiyat listesinden iskonto/KDV/kâr oranına göre yeni satış fiyatını otomatik hesaplar (yuvarlanmış + yuvarlanmamış değer birlikte gösterilir), sepet arama sistemiyle birden fazla ürün seçip toplu güncelleyebilir
-  - **Fatura Hazırlama** — ürün seçip birim/miktar/KDV'ye göre KDV hariç birim fiyatı otomatik hesaplar, hedef tutara manuel veya otomatik yaklaştırma, e-fatura portaline elle girerken referans olacak listeyi panoya kopyalar (otomatik form doldurma henüz yok)
+  - **Fatura Hazırlama** — ürün seçip birim/miktar/KDV'ye göre KDV hariç birim fiyatı otomatik hesaplar, hedef tutara manuel (ürün bazlı seçilebilir) veya otomatik yaklaştırma, listeyi panoya kopyalama veya bir **tarayıcı eklentisi** aracılığıyla luca.com.tr e-fatura portalına otomatik doldurma (bkz. [docs/invoice-extension.md](docs/invoice-extension.md))
 - **Otomatik Yedekleme** — Kullanıcılar, şablonlar, Excel, müşteri verileri
 - **Cihaz Eşleştirme** — QR/IP tabanlı güvenli cihaz pairing sistemi
 - **Çoklu Cihaz** — Tek sunucu, birden fazla POS terminali
@@ -182,10 +182,13 @@ inventra/
 │   │   └── features/         # Ekranlar (POS, stok, müşteri, ayarlar...)
 │   └── windows/              # Windows platform dosyaları
 │
+├── inventra_invoice_extension/  # Chrome/Brave eklentisi — luca.com.tr fatura formunu otomatik doldurur
+│
 ├── docker-compose.yml        # Docker Compose (kalıcı volume dahil)
 ├── docs/
 │   ├── vds-deployment.md     # VDS + Docker kurulum kılavuzu
 │   ├── release-process.md    # GitHub Release asset adlandırma kuralı (otomatik güncelleme için)
+│   ├── invoice-extension.md  # Fatura eklentisi kurulum/eşleştirme kılavuzu
 │   └── project-overview.md   # Proje mimarisi detaylı özet
 ├── .plan/                    # Geliştirme planları (versiyon bazlı)
 └── README.md

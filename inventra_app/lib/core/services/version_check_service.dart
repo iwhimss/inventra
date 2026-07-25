@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -316,7 +317,7 @@ class VersionCheckService {
             backgroundColor: AppTheme.panelBackground,
             title: const Text('İndirme Tamamlandı'),
             content: Text(
-              'Güncelleme indirildi:\n\n$filePath\n\nKurulumu başlatmak için dosyayı açmanız gerekiyor.',
+              'Güncelleme indirildi:\n\n$filePath',
             ),
             actions: [
               if (Platform.isWindows)
@@ -324,7 +325,12 @@ class VersionCheckService {
                   onPressed: () => Process.run('explorer', [dir!.path]),
                   child: const Text('KLASÖRÜ AÇ'),
                 ),
-              ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('TAMAM')),
+              TextButton(onPressed: () => Navigator.pop(ctx), child: Text('KAPAT', style: TextStyle(color: AppTheme.textMuted))),
+              ElevatedButton.icon(
+                onPressed: () => _openDownloadedFile(ctx, filePath),
+                icon: const Icon(Icons.open_in_new, size: 16),
+                label: const Text('AÇ'),
+              ),
             ],
           ),
         );
@@ -358,6 +364,39 @@ class VersionCheckService {
         );
       }
     }
+  }
+
+  /// İndirilen dosyayı işletim sisteminin varsayılan uygulamasıyla açar
+  /// (Windows'ta .rar için WinRAR/7-Zip, Android'de .apk için kurulum ekranı).
+  static Future<void> _openDownloadedFile(BuildContext context, String filePath) async {
+    final result = await OpenFilex.open(filePath);
+    if (!context.mounted) return;
+    if (result.type == ResultType.done) {
+      Navigator.of(context, rootNavigator: true).pop();
+      return;
+    }
+    String message;
+    switch (result.type) {
+      case ResultType.noAppToOpen:
+        message = 'Bu dosyayı açacak bir uygulama bulunamadı. Windows için WinRAR veya 7-Zip kurmanız gerekebilir.';
+        break;
+      case ResultType.permissionDenied:
+        message = 'Dosyayı açmak için gerekli izin verilmedi.';
+        break;
+      default:
+        message = 'Dosya açılamadı: ${result.message}';
+    }
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.panelBackground,
+        title: const Text('Dosya Açılamadı'),
+        content: Text(message),
+        actions: [
+          ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('TAMAM')),
+        ],
+      ),
+    );
   }
 
   static Future<Directory> _resolveDownloadDir() async {

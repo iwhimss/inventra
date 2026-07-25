@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Inventra Fatura Asistanı",
+  "version": "0.2.3",
+  "description": "Inventra'da hazırlanan fatura listesini turmobefatura.luca.com.tr'ye otomatik doldurur.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": ["storage", "alarms"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "host_permissions": ["https://turmobefatura.luca.com.tr/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "options.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Inventra Fatura Asistanı — Ayarlar"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["https://turmobefatura.luca.com.tr/Invoice/Create*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

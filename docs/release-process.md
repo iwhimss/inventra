@@ -3,8 +3,10 @@
 Uygulama, sunucudaki `min_app_version` ayarına karşılık gelen GitHub Release'i
 `GET https://api.github.com/repos/iwhimss/inventra/releases/tags/v{sürüm}`
 üzerinden çeker, platforma uygun asset'i indirir
-(bkz. `inventra_app/lib/core/services/version_check_service.dart`). Kurulum
-otomatik başlatılmaz; kullanıcı indirilen dosyayı kendisi açar.
+(bkz. `inventra_app/lib/core/services/version_check_service.dart`). İndirme
+bitince "AÇ" butonuyla dosya işletim sisteminin varsayılan uygulamasıyla
+(Windows: arşiv programı, Android: APK kurulum ekranı) açılabilir; kurulum
+otomatik başlatılmaz, son adımı kullanıcı yapar.
 
 ## Kesin adlandırma kuralı
 
@@ -35,3 +37,12 @@ yöntem değildir.
 Bu turda bir CI/CD otomasyonu (GitHub Actions ile otomatik derleme/yükleme)
 **kurulmadı** — release'lerin her sürümde elle, yukarıdaki kurala tam uyularak
 oluşturulup asset'lerin yüklenmesi gerekiyor.
+
+## Fatura Eklentisi Asset'i (opsiyonel, otomatik güncelleme akışına dahil değil)
+
+`inventra_invoice_extension/` klasörü, uygulamanın otomatik güncelleme
+sisteminden **bağımsız**. İsteğe bağlı olarak aynı release'e
+`inventra-v{sürüm}-invoicemodule.zip` adıyla ayrı bir asset olarak eklenebilir
+(klasörün zip'lenmiş hali) — bu sadece kullanıcının kendi indirip
+`chrome://extensions` üzerinden elle yüklemesi/güncellemesi içindir, uygulama
+bunu otomatik aramaz veya indirmez. Bkz. [invoice-extension.md](invoice-extension.md).

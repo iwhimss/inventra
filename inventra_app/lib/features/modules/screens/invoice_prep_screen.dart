@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:inventra_app/core/models/product.dart';
+import 'package:inventra_app/core/network/api_client.dart';
 import 'package:inventra_app/core/theme/app_theme.dart';
 import 'package:inventra_app/core/services/notification_service.dart';
 import 'package:inventra_app/core/utils/product_search.dart';
@@ -16,6 +18,7 @@ class _InvoiceLine {
   final TextEditingController qtyCtrl;
   final TextEditingController vatCtrl;
   final TextEditingController grossPriceCtrl;
+  bool includeInAdjustment = true;
 
   _InvoiceLine(this.product)
       : originalGrossPrice = product.salePrice,
@@ -56,15 +59,56 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
   final TextEditingController _targetCtrl = TextEditingController();
   final List<_InvoiceLine> _lines = [];
+  bool _extensionConnected = false;
+  Timer? _extensionStatusTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkExtensionStatus();
+    _extensionStatusTimer = Timer.periodic(const Duration(seconds: 10), (_) => _checkExtensionStatus());
+  }
 
   @override
   void dispose() {
+    _extensionStatusTimer?.cancel();
     _searchCtrl.dispose();
     _targetCtrl.dispose();
     for (final l in _lines) {
       l.dispose();
     }
     super.dispose();
+  }
+
+  Future<void> _checkExtensionStatus() async {
+    try {
+      final resp = await ApiClient.instance.get('/api/invoice-export/extension-status');
+      if (!mounted) return;
+      final connected = resp.success && resp.data?['connected'] == true;
+      if (connected != _extensionConnected) setState(() => _extensionConnected = connected);
+    } catch (_) {
+      // sessizce yoksay — bir sonraki periyodik kontrolde tekrar denenecek
+    }
+  }
+
+  Future<void> _exportToExtension() async {
+    if (_lines.isEmpty) return;
+    final lines = _lines
+        .map((l) => {
+              'name': l.product.name,
+              'unit': l.unitCtrl.text,
+              'quantity': l.quantity,
+              'netUnitPrice': l.netUnitPrice,
+              'vatPercent': l.vatPercent,
+            })
+        .toList();
+    final resp = await ApiClient.instance.post('/api/invoice-export', {'lines': lines});
+    if (!mounted) return;
+    if (resp.success) {
+      NotificationService.showSuccess("Liste eklentiye gönderildi. luca.com.tr sekmesine geçip \"Inventra'dan Doldur\" butonuna basın.");
+    } else {
+      NotificationService.showError('Liste eklentiye gönderilemedi: ${resp.error ?? 'bilinmeyen hata'}');
+    }
   }
 
   double get _total => _lines.fold(0.0, (sum, l) => sum + l.lineTotal);
@@ -128,13 +172,18 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
   /// Hedef tutara, en ucuz satırdan başlayarak yaklaşmayı ÖNERİR — sonucu
   /// doğrudan satır fiyatlarına yazar ama geri dönüşsüz/sessiz değildir:
   /// kullanıcı sonucu görür, beğenmezse tek tek düzenleyebilir.
-  void _autoApproach() {
+  ///
+  /// [pool] verilmezse tüm satırlar arasından seçilir (Otomatik mod);
+  /// verilirse sadece o alt küme arasında dağıtılır (Manuel mod — kullanıcı
+  /// hangi ürünlerin fiyatının oynatılacağını kendisi seçmiş demektir).
+  void _autoApproach([List<_InvoiceLine>? pool]) {
     final target = _target;
-    if (target == null || _lines.isEmpty) return;
+    final candidates = pool ?? _lines;
+    if (target == null || candidates.isEmpty) return;
     double diff = target - _total;
     if (diff.abs() < 0.01) return;
 
-    final sorted = List<_InvoiceLine>.from(_lines)..sort((a, b) => a.lineTotal.compareTo(b.lineTotal));
+    final sorted = List<_InvoiceLine>.from(candidates)..sort((a, b) => a.lineTotal.compareTo(b.lineTotal));
     for (final line in sorted) {
       if (diff.abs() < 0.01) break;
       final qty = line.quantity <= 0 ? 1 : line.quantity;
@@ -201,9 +250,11 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
                       ),
                     ),
                     ...List.generate(_lines.length, (i) {
+                      final diff = _diff;
+                      final showAdjustCheckbox = diff != null && diff.abs() >= 0.01;
                       return Column(
                         children: [
-                          _buildLineTile(_lines[i]),
+                          _buildLineTile(_lines[i], showAdjustCheckbox: showAdjustCheckbox),
                           if (i < _lines.length - 1) const Divider(height: 1),
                         ],
                       );
@@ -233,9 +284,42 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
                     children: [
                       Text('TOPLAM', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, letterSpacing: 1)),
                       Text('${_total.toStringAsFixed(2)} ₺', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _extensionConnected ? AppTheme.secondaryAccent : AppTheme.textMuted,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            _extensionConnected ? 'Eklenti Bağlı' : 'Eklenti Bulunamadı',
+                            style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
+                SizedBox(
+                  height: 44,
+                  child: Tooltip(
+                    message: _extensionConnected
+                        ? 'Listeyi tarayıcı eklentisine gönder'
+                        : 'Önce tarayıcı eklentisini kurup Inventra sunucusuyla eşleştirmeniz gerekiyor',
+                    child: OutlinedButton.icon(
+                      onPressed: (_lines.isEmpty || !_extensionConnected) ? null : _exportToExtension,
+                      icon: const Icon(Icons.extension_outlined, size: 16),
+                      label: Text(isMobile ? 'AKTAR' : 'EKLENTİYE AKTAR'),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 SizedBox(
                   height: 44,
                   child: ElevatedButton.icon(
@@ -315,12 +399,23 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
     );
   }
 
-  Widget _buildLineTile(_InvoiceLine line) {
+  Widget _buildLineTile(_InvoiceLine line, {bool showAdjustCheckbox = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (showAdjustCheckbox)
+            Padding(
+              padding: const EdgeInsets.only(top: 2, right: 4),
+              child: Tooltip(
+                message: 'Manuel yaklaştırmada bu ürünün fiyatı değiştirilsin mi?',
+                child: Checkbox(
+                  value: line.includeInAdjustment,
+                  onChanged: (v) => setState(() => line.includeInAdjustment = v ?? true),
+                ),
+              ),
+            ),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -424,12 +519,21 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
                 style: TextStyle(color: diff.abs() < 0.01 ? AppTheme.secondaryAccent : AppTheme.dangerAccent, fontWeight: FontWeight.bold, fontSize: 13),
               ),
             ),
-          if (diff != null && diff.abs() >= 0.01)
+          if (diff != null && diff.abs() >= 0.01) ...[
             OutlinedButton.icon(
-              onPressed: _autoApproach,
+              onPressed: () => _autoApproach(),
               icon: const Icon(Icons.auto_fix_high, size: 16),
               label: const Text('Otomatik Yaklaştır'),
             ),
+            Builder(builder: (_) {
+              final selected = _lines.where((l) => l.includeInAdjustment).toList();
+              return OutlinedButton.icon(
+                onPressed: selected.isEmpty ? null : () => _autoApproach(selected),
+                icon: const Icon(Icons.checklist, size: 16),
+                label: const Text('Seçili Ürünlerle Yaklaştır'),
+              );
+            }),
+          ],
         ],
       ),
     );

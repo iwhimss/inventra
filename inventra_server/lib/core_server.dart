@@ -157,6 +157,12 @@ class CoreServer {
     _router.get('/api/pair/status/<device_id>', _handlePairStatus);
     _router.get('/api/pair/devices', _handlePairDevices);
 
+    // ─── Fatura Hazırlama — Tarayıcı Eklentisi Köprüsü ───────
+    _router.post('/api/invoice-export', _handleInvoiceExportCreate);
+    _router.get('/api/invoice-export/pending', _handleInvoiceExportPending);
+    _router.post('/api/invoice-export/heartbeat', _handleInvoiceExportHeartbeat);
+    _router.get('/api/invoice-export/extension-status', _handleInvoiceExportExtensionStatus);
+
     // ─── Cart Transfer ──────────────────────────────────────
     _router.post('/api/cart/transfer', _handleCartTransferSend);
     _router.get('/api/cart/transfer/pending', _handleCartTransferPending);
@@ -1645,6 +1651,90 @@ class CoreServer {
     try {
       final rows = _db.query("SELECT * FROM paired_devices WHERE status = 'approved'");
       return _jsonOk({'success': true, 'data': rows});
+    } catch (e) {
+      return _jsonError(e.toString());
+    }
+  }
+
+  // ─── Fatura Hazırlama — Tarayıcı Eklentisi Köprüsü ─────────
+  //
+  // Inventra masaüstü/mobil uygulaması bir web sayfası olmadığı için tarayıcı
+  // eklentisiyle doğrudan konuşamaz; bu yüzden mevcut sunucu bir köprü görevi
+  // görüyor. Uygulama hazırlanan fatura satırlarını buraya gönderir (tek
+  // aktif taslak modeli — yeni gönderim eskisinin üzerine yazar), eklenti bu
+  // taslağı çeker (tek seferlik teslim) ve periyodik heartbeat ile varlığını
+  // bildirir. Eklenti de `paired_devices` üzerinden aynı cihaz eşleştirme
+  // akışıyla (device_type: 'browser_extension') onaylanır ve aynı global
+  // api_key'i kullanır — ayrı bir kimlik doğrulama mekanizması yok.
+
+  Future<Response> _handleInvoiceExportCreate(Request request) async {
+    try {
+      final body = await _readBody(request);
+      final lines = body['lines'];
+      if (lines is! List || lines.isEmpty) {
+        return _jsonError('lines gerekli', code: 400);
+      }
+      _db.execute('DELETE FROM invoice_exports WHERE consumed_at IS NULL');
+      _db.insert('invoice_exports', {
+        'id': const Uuid().v4(),
+        'payload': jsonEncode({'lines': lines}),
+        'created_at': DateTime.now().toIso8601String(),
+      });
+      return _jsonOk({'success': true});
+    } catch (e) {
+      return _jsonError(e.toString());
+    }
+  }
+
+  Response _handleInvoiceExportPending(Request request) {
+    try {
+      final rows = _db.query(
+        "SELECT * FROM invoice_exports WHERE consumed_at IS NULL ORDER BY created_at DESC LIMIT 1",
+      );
+      if (rows.isEmpty) {
+        return _jsonOk({'success': true, 'data': null});
+      }
+      final row = rows.first;
+      _db.execute('UPDATE invoice_exports SET consumed_at = ? WHERE id = ?', [
+        DateTime.now().toIso8601String(),
+        row['id'],
+      ]);
+      final payload = jsonDecode(row['payload'] as String) as Map<String, dynamic>;
+      return _jsonOk({'success': true, 'data': payload});
+    } catch (e) {
+      return _jsonError(e.toString());
+    }
+  }
+
+  Future<Response> _handleInvoiceExportHeartbeat(Request request) async {
+    try {
+      final body = await _readBody(request);
+      final deviceId = body['device_id'] as String?;
+      if (deviceId == null || deviceId.isEmpty) {
+        return _jsonError('device_id gerekli', code: 400);
+      }
+      _db.execute(
+        'UPDATE paired_devices SET last_sync_at = ? WHERE device_id = ?',
+        [DateTime.now().toIso8601String(), deviceId],
+      );
+      return _jsonOk({'success': true});
+    } catch (e) {
+      return _jsonError(e.toString());
+    }
+  }
+
+  Response _handleInvoiceExportExtensionStatus(Request request) {
+    try {
+      final rows = _db.query(
+        "SELECT last_sync_at FROM paired_devices WHERE device_type = 'browser_extension' AND status = 'approved' AND last_sync_at IS NOT NULL ORDER BY last_sync_at DESC LIMIT 1",
+      );
+      if (rows.isEmpty) {
+        return _jsonOk({'success': true, 'connected': false});
+      }
+      final lastSeenStr = rows.first['last_sync_at'] as String;
+      final lastSeen = DateTime.tryParse(lastSeenStr);
+      final connected = lastSeen != null && DateTime.now().difference(lastSeen).inSeconds < 90;
+      return _jsonOk({'success': true, 'connected': connected, 'last_seen': lastSeenStr});
     } catch (e) {
       return _jsonError(e.toString());
     }
