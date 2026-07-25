@@ -171,35 +171,54 @@ class _PriceUpdateScreenState extends ConsumerState<PriceUpdateScreen> {
         title: const Text('Fiyat Güncelleme'),
         backgroundColor: AppTheme.panelBackground,
       ),
-      body: Padding(
-        padding: EdgeInsets.all(isMobile ? 12 : 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildRateInputs(isMobile),
-            const SizedBox(height: 16),
-            _buildSearchBar(),
-            const SizedBox(height: 12),
-            if (_lines.isNotEmpty)
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: _confirmClearAll,
-                  icon: Icon(Icons.delete_sweep, size: 16, color: AppTheme.dangerAccent),
-                  label: Text('Tümünü Sil', style: TextStyle(color: AppTheme.dangerAccent)),
-                ),
-              ),
-            Expanded(
-              child: _lines.isEmpty
-                  ? Center(child: Text('Ürün arayıp seçtikçe burada listelenecek.', style: TextStyle(color: AppTheme.textMuted)))
-                  : ListView.separated(
-                      itemCount: _lines.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (ctx, i) => _buildLineTile(_lines[i]),
+      body: Column(
+        children: [
+          // Klavye açıldığında (mobil) taşma olmaması ve arama sonuçlarına
+          // her zaman erişilebilmesi için tüm üst bölüm tek bir kaydırılabilir
+          // alanda; sadece GÜNCELLE butonu altta sabit kalır.
+          Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.all(isMobile ? 12 : 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildRateInputs(isMobile),
+                  const SizedBox(height: 16),
+                  _buildSearchBar(),
+                  const SizedBox(height: 12),
+                  if (_lines.isNotEmpty) ...[
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: _confirmClearAll,
+                        icon: Icon(Icons.delete_sweep, size: 16, color: AppTheme.dangerAccent),
+                        label: Text('Tümünü Sil', style: TextStyle(color: AppTheme.dangerAccent)),
+                      ),
                     ),
+                    ...List.generate(_lines.length, (i) {
+                      return Column(
+                        children: [
+                          _buildLineTile(_lines[i]),
+                          if (i < _lines.length - 1) const Divider(height: 1),
+                        ],
+                      );
+                    }),
+                  ] else
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 40),
+                      child: Center(child: Text('Ürün arayıp seçtikçe burada listelenecek.', style: TextStyle(color: AppTheme.textMuted))),
+                    ),
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            SizedBox(
+          ),
+          Container(
+            padding: EdgeInsets.fromLTRB(isMobile ? 12 : 24, 12, isMobile ? 12 : 24, isMobile ? 12 : 24),
+            decoration: BoxDecoration(
+              color: AppTheme.panelBackground,
+              border: Border(top: BorderSide(color: AppTheme.borderBright)),
+            ),
+            child: SizedBox(
               height: 48,
               child: ElevatedButton.icon(
                 onPressed: _submitting || _lines.isEmpty ? null : _submit,
@@ -209,8 +228,8 @@ class _PriceUpdateScreenState extends ConsumerState<PriceUpdateScreen> {
                 label: Text(_submitting ? 'GÜNCELLENİYOR...' : 'GÜNCELLE'),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -339,30 +358,46 @@ class _PriceUpdateScreenState extends ConsumerState<PriceUpdateScreen> {
 
   Widget _buildLineTile(_PriceLine line) {
     final newPrice = _computeNewPrice(line);
-    return ListTile(
-      title: Text(line.product.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Row(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Mevcut: ${line.product.salePrice.toStringAsFixed(2)} ₺', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 130,
-            child: TextField(
-              controller: line.newListPriceCtrl,
-              keyboardType: TextInputType.number,
-              style: const TextStyle(fontSize: 13),
-              decoration: const InputDecoration(labelText: 'Yeni Liste Fiyatı (₺)', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
-              onChanged: (_) => setState(() {}),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Ürünün tam ismi — kısaltılmadan, gerekirse alt satıra kayarak
+                Text(line.product.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                const SizedBox(height: 6),
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 12,
+                  runSpacing: 6,
+                  children: [
+                    Text('Mevcut: ${line.product.salePrice.toStringAsFixed(2)} ₺', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                    SizedBox(
+                      width: 130,
+                      child: TextField(
+                        controller: line.newListPriceCtrl,
+                        keyboardType: TextInputType.number,
+                        style: const TextStyle(fontSize: 13),
+                        decoration: const InputDecoration(labelText: 'Yeni Liste Fiyatı (₺)', isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                    if (newPrice != null)
+                      Text('Yeni: ${newPrice.toStringAsFixed(0)} ₺', style: TextStyle(color: AppTheme.secondaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+                  ],
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 12),
-          if (newPrice != null)
-            Text('Yeni: ${newPrice.toStringAsFixed(0)} ₺', style: TextStyle(color: AppTheme.secondaryAccent, fontWeight: FontWeight.bold, fontSize: 13)),
+          IconButton(
+            icon: Icon(Icons.close, size: 18, color: AppTheme.dangerAccent),
+            onPressed: () => setState(() => _lines.remove(line)),
+          ),
         ],
-      ),
-      trailing: IconButton(
-        icon: Icon(Icons.close, size: 18, color: AppTheme.dangerAccent),
-        onPressed: () => setState(() => _lines.remove(line)),
       ),
     );
   }
