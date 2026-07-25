@@ -29,14 +29,19 @@ function statusIcon(status) {
 function renderProgress(fillState) {
   if (pollTimer) clearInterval(pollTimer);
   const rows = fillState.results
-    .map((r) => `<div class="row-status"><span class="name">${escapeHtml(r.name)}</span>${statusIcon(r.status)}</div>`)
+    .map((r) => {
+      const notes = [r.reason, ...(r.warnings || [])].filter(Boolean).join(' • ');
+      const hasWarning = r.status === 'ok' && r.warnings && r.warnings.length > 0;
+      return `<div class="row-status" title="${escapeHtml(notes)}"><span class="name">${escapeHtml(r.name)}</span>${hasWarning ? '<span class="wait">⚠</span>' : ''}${statusIcon(r.status)}</div>`;
+    })
     .join('');
   const okCount = fillState.results.filter((r) => r.status === 'ok').length;
   const failCount = fillState.results.filter((r) => r.status === 'unmatched').length;
+  const warnCount = fillState.results.filter((r) => r.status === 'ok' && r.warnings?.length).length;
 
   render(`
     ${rows}
-    <div class="summary">${okCount}/${fillState.results.length} satır dolduruldu${failCount ? `, ${failCount} satır eşleşmedi` : ''}</div>
+    <div class="summary">${okCount}/${fillState.results.length} satır dolduruldu${warnCount ? `, ${warnCount} satırda uyarı var (üzerine gelin)` : ''}${failCount ? `, ${failCount} satır bulunamadı` : ''}</div>
     ${fillState.running
       ? `<div class="btn-row">
            <button class="secondary" id="pause-btn">${fillState.paused ? 'Devam Et' : 'Duraklat'}</button>

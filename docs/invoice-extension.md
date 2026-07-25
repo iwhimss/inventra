@@ -38,7 +38,7 @@ Birden fazla tarayıcı/bilgisayara eklenti kurup ayrı ayrı eşleştirebilirsi
 1. Inventra'da fatura listesini hazırlayın, alttaki dropdown'dan **hedef cihazı** (hangi tarayıcıdaki eklentiye gönderileceğini) seçin, **"EKLENTİYE AKTAR"**a basın.
 2. Tarayıcıda yeni liste geldiğinde bir bildirim belirir (isterseniz beklemeden de simgeye tıklayabilirsiniz).
 3. Eklenti simgesine tıklayın — popup'ta gönderen kullanıcı ve ürün sayısıyla birlikte onay ekranı çıkar: **Kabul Et** veya **Reddet**.
-4. **Kabul Et**'e bastığınızda, `turmobefatura.luca.com.tr` fatura oluşturma sayfası aktif sekmedeyse doldurma otomatik başlar. Popup'ta her satırın durumu görünür (✓ dolduruldu / ✗ eşleşmedi), **"Duraklat"** veya **"Durdur"** ile süreci kontrol edebilirsiniz.
+4. **Kabul Et**'e bastığınızda, `turmobefatura.luca.com.tr` fatura oluşturma sayfası aktif sekmedeyse doldurma otomatik başlar — ürün adı da tıpkı Miktar/Birim Fiyat gibi serbest metin olarak yazılır (site tarafında ürün kataloğu kullanmıyorsanız hiçbir öneri listesi beklenmez), Birim ve KDV alanları ise dropdown olduğu için sitedeki seçeneklerle metin eşleştirilerek seçilir. Popup'ta her satırın durumu görünür (✓ dolduruldu, ⚠ uyarı var — üzerine gelince ne olduğu görünür, ✗ satır bulunamadı), **"Duraklat"** veya **"Durdur"** ile süreci kontrol edebilirsiniz.
 5. Popup'ı kapatıp tekrar açsanız da (doldurma arkaplanda devam ettiği için) ilerlemeyi kaldığı yerden görürsünüz.
 6. İşlem bitince kaç satırın başarıyla dolduğu, kaç satırın eşleşmediği özetlenir — eşleşmeyen ürünleri elle tamamlamanız gerekir.
 
@@ -54,9 +54,10 @@ Chrome Web Store'da olmadığı için **otomatik güncelleme yoktur**. Yeni bir 
 - **"Sunucudan liste alınamadı: Failed to fetch"** hatası artık oluşmamalı — önceki sürümde bu hata, sunucuyla konuşan kodun fatura sayfasına enjekte edilen içerik betiğinde çalışmasından kaynaklanıyordu (sayfanın kendi güvenlik politikası dış isteği engelliyordu). Artık tüm sunucu iletişimi eklentinin arkaplan servisinde toplandığı için bu sınıf hata oluşmamalı. Yine de bir hata görürseniz popup'taki mesajı olduğu gibi bildirin.
 - **"İzin isteği başarısız" / eşleştirme çalışmıyor:** adresin `http://` veya `https://` ile doğru başladığından emin olun (VDS/domain genelde `https://`, yerel ağ IP'si genelde `http://`).
 - Popup "Sayfayla bağlantı kurulamadı" derse: sayfayı yenileyin (eklenti güncellendikten hemen sonra açık kalan sekmelerde içerik betiği yeniden yüklenmemiş olabilir).
+- **Bir satır hiç dolmuyorsa veya bazı alanlar eksik kalıyorsa:** `turmobefatura.luca.com.tr` sekmesinde F12 → Console'u açıp `[Inventra]` ile başlayan satırlara bakın — hangi alanın hangi id ile arandığı ve bulunup bulunmadığı orada adım adım loglanır. Bu çıktıyı olduğu gibi paylaşmanız, sorunu DOM parçası istemeden hızlıca teşhis etmemizi sağlar.
 
 ## Bilinen Sınırlamalar
 
-- Eklentinin ürün eşleştirme mantığı, luca.com.tr'nin kendi ürün arama önerilerine (typeahead) dayanır — sitenin kendi kataloğunda olmayan bir ürün adı için öneri çıkmaz, o satır otomatik olarak "eşleşmedi" işaretlenip bir sonraki satıra geçilir.
+- Ürün Adı alanı, sitenin kendi ürün kataloğunu kullanıyorsanız normalde bir öneri/otomatik-tamamlama listesi gösterir — ama eklenti bu listeyi hiç beklemez veya tıklamaz, adı doğrudan serbest metin olarak yazar (kataloğa bağlı olmayan, elle giriş yapılan kullanım şekliyle uyumlu). Kataloğu aktif kullanıyorsanız ürünün otomatik seçilmesi gerekiyorsa bu, eklentinin şu anki kapsamı dışındadır.
 - KDV oranı sitede sadece `0, 1, 8, 10, 18, 20` değerlerini kabul ediyor; ürününüzün KDV oranı bu listede yoksa en yakın değere yuvarlanır ve popup'ta uyarı olarak gösterilir.
-- İlk sürümde (v0.2.2) bazı DOM seçicileri (özellikle 2. ve sonraki satırların alan id'leri, öneri listesinin CSS seçicisi) canlı sayfa üzerinde tam doğrulanamadan yazıldı — bazı satırlarda beklenmeyen davranış görülürse lütfen bildirin.
+- Satır indeksleme kuralı (`#Miktar1`, `#Miktar2`... — 2. ve sonraki satırların alan id'leri) canlı sayfada tam doğrulanmadan yazıldı; bir satır "bulunamadı" olarak işaretlenirse (özellikle 2+ satırlarda) yukarıdaki konsol log yöntemiyle bildirin.

@@ -5,12 +5,15 @@
 // fetch() çağrılarını engelliyor, bu yüzden tüm ağ isteği background.js'te
 // toplandı). Popup, mesajlarla bu betiğe "şu satırları doldur" der, bu
 // betik ilerlemesini yine mesajlarla popup'a bildirir.
+//
+// Not: Ürün Adı alanı sitenin bir "typeahead" (otomatik tamamlama) kutusu
+// olsa da, bu sadece kullanıcının o sitede kayıtlı bir ürün kataloğu varsa
+// devreye giriyor. Kataloğa bağlı değilseniz (yaygın kullanım) ürün adı da
+// tıpkı Miktar/Birim Fiyat gibi serbest metin olarak yazılır — hiçbir öneri
+// listesi beklenmez veya tıklanmaz.
 
 const ALLOWED_VAT_RATES = [0, 1, 8, 10, 18, 20];
-const SUGGESTION_SELECTOR = '.Typeahead-selectable';
-const SUGGESTION_WAIT_MS = 4000;
-const SUGGESTION_POLL_MS = 200;
-const AFTER_SELECT_WAIT_MS = 350;
+const AFTER_FIELD_WAIT_MS = 150;
 const AFTER_ROW_WAIT_MS = 400;
 
 let state = {
@@ -18,8 +21,12 @@ let state = {
   paused: false,
   stopped: false,
   lines: [],
-  results: [], // {name, status: 'pending'|'ok'|'unmatched'|'stopped'}
+  results: [], // {name, status: 'pending'|'ok'|'unmatched'|'stopped', warnings?: string[]}
 };
+
+function log(...args) {
+  console.log('[Inventra]', ...args);
+}
 
 function fieldId(base, index) {
   return index === 0 ? base : `${base}${index}`;
@@ -75,95 +82,75 @@ async function waitForPauseIfNeeded() {
   }
 }
 
-async function waitForSuggestions() {
-  const start = Date.now();
-  while (Date.now() - start < SUGGESTION_WAIT_MS) {
-    const items = document.querySelectorAll(SUGGESTION_SELECTOR);
-    if (items.length > 0) return Array.from(items);
-    await sleep(SUGGESTION_POLL_MS);
-  }
-  return [];
-}
-
-function normalizeText(text) {
-  return text
-    .toLocaleLowerCase('tr-TR')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .trim();
-}
-
-function pickBestSuggestion(items, productName) {
-  const target = normalizeText(productName);
-  let best = null;
-  let bestScore = -1;
-  for (const item of items) {
-    const text = normalizeText(item.textContent || '');
-    if (!text) continue;
-    let score = 0;
-    if (text === target) score = 100;
-    else if (text.includes(target) || target.includes(text)) score = 50;
-    else {
-      const targetWords = target.split(/\s+/).filter(Boolean);
-      const matchedWords = targetWords.filter((w) => text.includes(w)).length;
-      score = targetWords.length ? (matchedWords / targetWords.length) * 30 : 0;
-    }
-    if (score > bestScore) {
-      bestScore = score;
-      best = item;
-    }
-  }
-  return bestScore >= 15 ? best : null;
-}
-
 async function addNewRow() {
   const btn = byId('btnAddProduct');
-  if (!btn) return false;
+  if (!btn) {
+    log('"Yeni Satır Ekle" butonu (#btnAddProduct) bulunamadı.');
+    return false;
+  }
   btn.click();
   await sleep(AFTER_ROW_WAIT_MS);
   return true;
 }
 
+// Ürün Adı dahil TÜM alanları doğrudan, serbest metin olarak doldurur —
+// hiçbir öneri listesi beklenmez/tıklanmaz. Birim ve KDV birer <select>
+// olduğu için metin eşleşmesiyle seçilir, diğerleri düz metin girişidir.
 async function fillRow(index, line) {
+  log(`Satır ${index}: "${line.name}" dolduruluyor...`);
+
   const urunAdiEl = byId(fieldId('UrunAdi', index));
-  if (!urunAdiEl) return { status: 'unmatched', reason: 'Ürün adı alanı bulunamadı (sayfa yapısı değişmiş olabilir).' };
+  if (!urunAdiEl) {
+    log(`Satır ${index}: Ürün Adı alanı (#${fieldId('UrunAdi', index)}) bulunamadı — satır indeksleme varsayımı bu sayfada geçerli olmayabilir.`);
+    return { status: 'unmatched', reason: `Ürün adı alanı (#${fieldId('UrunAdi', index)}) bulunamadı.` };
+  }
 
+  const warnings = [];
   setNativeInputValue(urunAdiEl, line.name);
-  const suggestions = await waitForSuggestions();
-  if (suggestions.length === 0) {
-    return { status: 'unmatched', reason: 'Ürün önerisi çıkmadı — bu sitenin kendi ürün kataloğunda bulunamamış olabilir.' };
-  }
-
-  const chosen = pickBestSuggestion(suggestions, line.name);
-  if (!chosen) {
-    return { status: 'unmatched', reason: 'Öneriler arasında yeterince yakın bir eşleşme bulunamadı.' };
-  }
-
-  chosen.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-  chosen.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  await sleep(AFTER_SELECT_WAIT_MS);
+  await sleep(AFTER_FIELD_WAIT_MS);
 
   const measureUnitEl = byId(fieldId('MeasureUnit', index));
-  const qtyEl = byId(fieldId('Miktar', index));
-  const priceEl = byId(fieldId('BirimFiyat', index));
-  const discountEl = byId(fieldId('IskontoOrani', index));
-  const vatEl = byId(fieldId('KDV', index));
-
-  let warnings = [];
-
-  if (measureUnitEl && !setSelectValueByText(measureUnitEl, line.unit)) {
-    warnings.push(`birim "${line.unit}" listede bulunamadı`);
+  if (measureUnitEl) {
+    const ok = setSelectValueByText(measureUnitEl, line.unit);
+    log(`Satır ${index}: Birim "${line.unit}" ${ok ? 'seçildi' : 'BULUNAMADI'}.`);
+    if (!ok) warnings.push(`birim "${line.unit}" listede bulunamadı`);
+  } else {
+    log(`Satır ${index}: Birim alanı (#${fieldId('MeasureUnit', index)}) bulunamadı.`);
+    warnings.push('Birim alanı bulunamadı');
   }
-  if (qtyEl) setNativeInputValue(qtyEl, formatTrNumber(line.quantity, line.quantity % 1 === 0 ? 0 : 2));
-  if (priceEl) setNativeInputValue(priceEl, formatTrNumber(line.netUnitPrice, 4));
+
+  const qtyEl = byId(fieldId('Miktar', index));
+  if (qtyEl) {
+    setNativeInputValue(qtyEl, formatTrNumber(line.quantity, line.quantity % 1 === 0 ? 0 : 2));
+  } else {
+    log(`Satır ${index}: Miktar alanı (#${fieldId('Miktar', index)}) bulunamadı.`);
+    warnings.push('Miktar alanı bulunamadı');
+  }
+
+  const priceEl = byId(fieldId('BirimFiyat', index));
+  if (priceEl) {
+    setNativeInputValue(priceEl, formatTrNumber(line.netUnitPrice, 4));
+  } else {
+    log(`Satır ${index}: Birim Fiyat alanı (#${fieldId('BirimFiyat', index)}) bulunamadı.`);
+    warnings.push('Birim fiyat alanı bulunamadı');
+  }
+
+  const discountEl = byId(fieldId('IskontoOrani', index));
   if (discountEl) setNativeInputValue(discountEl, '0');
+
+  const vatEl = byId(fieldId('KDV', index));
   if (vatEl) {
     const nearest = nearestAllowedVat(line.vatPercent);
     if (nearest !== line.vatPercent) warnings.push(`KDV %${line.vatPercent} yerine en yakın izinli değer %${nearest} kullanıldı`);
     const ok = setSelectValueByText(vatEl, String(nearest));
+    log(`Satır ${index}: KDV %${nearest} ${ok ? 'seçildi' : 'BULUNAMADI'}.`);
     if (!ok) warnings.push('KDV alanı ayarlanamadı');
+  } else {
+    log(`Satır ${index}: KDV alanı (#${fieldId('KDV', index)}) bulunamadı.`);
+    warnings.push('KDV alanı bulunamadı');
   }
 
+  log(`Satır ${index}: tamamlandı.`, warnings.length ? { warnings } : '(uyarı yok)');
   return { status: 'ok', warnings };
 }
 
@@ -173,6 +160,7 @@ async function runFill(lines) {
   state.paused = false;
   state.lines = lines;
   state.results = lines.map((l) => ({ name: l.name, status: 'pending' }));
+  log(`Doldurma başlıyor — ${lines.length} satır.`);
 
   for (let i = 0; i < state.lines.length; i++) {
     if (state.stopped) {
@@ -191,10 +179,12 @@ async function runFill(lines) {
       const result = await fillRow(i, state.lines[i]);
       state.results[i] = { name: state.lines[i].name, status: result.status, reason: result.reason, warnings: result.warnings };
     } catch (e) {
+      log(`Satır ${i}: beklenmeyen hata`, e);
       state.results[i] = { name: state.lines[i].name, status: 'unmatched', reason: String(e) };
     }
   }
 
+  log('Doldurma bitti.', state.results);
   state.running = false;
 }
 
