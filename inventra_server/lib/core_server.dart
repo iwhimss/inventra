@@ -160,8 +160,10 @@ class CoreServer {
     // ─── Fatura Hazırlama — Tarayıcı Eklentisi Köprüsü ───────
     _router.post('/api/invoice-export', _handleInvoiceExportCreate);
     _router.get('/api/invoice-export/pending', _handleInvoiceExportPending);
+    _router.get('/api/invoice-export/peek', _handleInvoiceExportPeek);
+    _router.post('/api/invoice-export/reject', _handleInvoiceExportReject);
     _router.post('/api/invoice-export/heartbeat', _handleInvoiceExportHeartbeat);
-    _router.get('/api/invoice-export/extension-status', _handleInvoiceExportExtensionStatus);
+    _router.get('/api/invoice-export/devices', _handleInvoiceExportDevices);
 
     // ─── Cart Transfer ──────────────────────────────────────
     _router.post('/api/cart/transfer', _handleCartTransferSend);
@@ -1660,24 +1662,34 @@ class CoreServer {
   //
   // Inventra masaüstü/mobil uygulaması bir web sayfası olmadığı için tarayıcı
   // eklentisiyle doğrudan konuşamaz; bu yüzden mevcut sunucu bir köprü görevi
-  // görüyor. Uygulama hazırlanan fatura satırlarını buraya gönderir (tek
-  // aktif taslak modeli — yeni gönderim eskisinin üzerine yazar), eklenti bu
-  // taslağı çeker (tek seferlik teslim) ve periyodik heartbeat ile varlığını
-  // bildirir. Eklenti de `paired_devices` üzerinden aynı cihaz eşleştirme
-  // akışıyla (device_type: 'browser_extension') onaylanır ve aynı global
-  // api_key'i kullanır — ayrı bir kimlik doğrulama mekanizması yok.
+  // görüyor. Uygulama hazırlanan fatura satırlarını, seçilen hedef cihaza
+  // (`target_device_id`) göre buraya gönderir (her cihaz için ayrı, tek aktif
+  // taslak modeli), eklenti önce `peek` ile göz atıp kullanıcıya onaylatır,
+  // onaylanırsa `pending` ile tüketir. Eklenti de `paired_devices` üzerinden
+  // aynı cihaz eşleştirme akışıyla (device_type: 'browser_extension') onaylanır
+  // ve aynı global api_key'i kullanır — ayrı bir kimlik doğrulama mekanizması yok.
 
   Future<Response> _handleInvoiceExportCreate(Request request) async {
     try {
       final body = await _readBody(request);
       final lines = body['lines'];
+      final targetDeviceId = body['target_device_id'] as String?;
+      final senderName = (body['sender_name'] as String?)?.trim();
       if (lines is! List || lines.isEmpty) {
         return _jsonError('lines gerekli', code: 400);
       }
-      _db.execute('DELETE FROM invoice_exports WHERE consumed_at IS NULL');
+      if (targetDeviceId == null || targetDeviceId.isEmpty) {
+        return _jsonError('target_device_id gerekli', code: 400);
+      }
+      _db.execute(
+        'DELETE FROM invoice_exports WHERE consumed_at IS NULL AND target_device_id = ?',
+        [targetDeviceId],
+      );
       _db.insert('invoice_exports', {
         'id': const Uuid().v4(),
         'payload': jsonEncode({'lines': lines}),
+        'target_device_id': targetDeviceId,
+        'sender_name': (senderName == null || senderName.isEmpty) ? 'Inventra Uygulaması' : senderName,
         'created_at': DateTime.now().toIso8601String(),
       });
       return _jsonOk({'success': true});
@@ -1686,21 +1698,74 @@ class CoreServer {
     }
   }
 
+  Map<String, dynamic>? _latestPendingExportFor(String deviceId) {
+    final rows = _db.query(
+      "SELECT * FROM invoice_exports WHERE consumed_at IS NULL AND target_device_id = ? ORDER BY created_at DESC LIMIT 1",
+      [deviceId],
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Response _handleInvoiceExportPeek(Request request) {
+    try {
+      final deviceId = request.url.queryParameters['device_id'];
+      if (deviceId == null || deviceId.isEmpty) {
+        return _jsonError('device_id gerekli', code: 400);
+      }
+      final row = _latestPendingExportFor(deviceId);
+      if (row == null) {
+        return _jsonOk({'success': true, 'pending': false});
+      }
+      final payload = jsonDecode(row['payload'] as String) as Map<String, dynamic>;
+      final lines = (payload['lines'] as List?) ?? [];
+      return _jsonOk({
+        'success': true,
+        'pending': true,
+        'sender_name': row['sender_name'],
+        'line_count': lines.length,
+        'created_at': row['created_at'],
+      });
+    } catch (e) {
+      return _jsonError(e.toString());
+    }
+  }
+
   Response _handleInvoiceExportPending(Request request) {
     try {
-      final rows = _db.query(
-        "SELECT * FROM invoice_exports WHERE consumed_at IS NULL ORDER BY created_at DESC LIMIT 1",
-      );
-      if (rows.isEmpty) {
+      final deviceId = request.url.queryParameters['device_id'];
+      if (deviceId == null || deviceId.isEmpty) {
+        return _jsonError('device_id gerekli', code: 400);
+      }
+      final row = _latestPendingExportFor(deviceId);
+      if (row == null) {
         return _jsonOk({'success': true, 'data': null});
       }
-      final row = rows.first;
       _db.execute('UPDATE invoice_exports SET consumed_at = ? WHERE id = ?', [
         DateTime.now().toIso8601String(),
         row['id'],
       ]);
       final payload = jsonDecode(row['payload'] as String) as Map<String, dynamic>;
       return _jsonOk({'success': true, 'data': payload});
+    } catch (e) {
+      return _jsonError(e.toString());
+    }
+  }
+
+  Future<Response> _handleInvoiceExportReject(Request request) async {
+    try {
+      final body = await _readBody(request);
+      final deviceId = body['device_id'] as String?;
+      if (deviceId == null || deviceId.isEmpty) {
+        return _jsonError('device_id gerekli', code: 400);
+      }
+      final row = _latestPendingExportFor(deviceId);
+      if (row != null) {
+        _db.execute('UPDATE invoice_exports SET consumed_at = ? WHERE id = ?', [
+          DateTime.now().toIso8601String(),
+          row['id'],
+        ]);
+      }
+      return _jsonOk({'success': true});
     } catch (e) {
       return _jsonError(e.toString());
     }
@@ -1723,25 +1788,24 @@ class CoreServer {
     }
   }
 
-  Response _handleInvoiceExportExtensionStatus(Request request) {
+  Response _handleInvoiceExportDevices(Request request) {
     try {
       final rows = _db.query(
-        "SELECT device_id, device_name, last_sync_at FROM paired_devices WHERE device_type = 'browser_extension' AND status = 'approved' AND last_sync_at IS NOT NULL ORDER BY last_sync_at DESC LIMIT 1",
+        "SELECT device_id, device_name, last_sync_at FROM paired_devices WHERE device_type = 'browser_extension' AND status = 'approved' ORDER BY device_name",
       );
-      if (rows.isEmpty) {
-        return _jsonOk({'success': true, 'connected': false});
-      }
-      final row = rows.first;
-      final lastSeenStr = row['last_sync_at'] as String;
-      final lastSeen = DateTime.tryParse(lastSeenStr);
-      final connected = lastSeen != null && DateTime.now().difference(lastSeen).inSeconds < 90;
-      return _jsonOk({
-        'success': true,
-        'connected': connected,
-        'last_seen': lastSeenStr,
-        'device_name': row['device_name'],
-        'device_id': row['device_id'],
-      });
+      final now = DateTime.now();
+      final devices = rows.map((row) {
+        final lastSeenStr = row['last_sync_at'] as String?;
+        final lastSeen = lastSeenStr != null ? DateTime.tryParse(lastSeenStr) : null;
+        final connected = lastSeen != null && now.difference(lastSeen).inSeconds < 90;
+        return {
+          'device_id': row['device_id'],
+          'device_name': row['device_name'],
+          'connected': connected,
+          'last_seen': lastSeenStr,
+        };
+      }).toList();
+      return _jsonOk({'success': true, 'data': devices});
     } catch (e) {
       return _jsonError(e.toString());
     }

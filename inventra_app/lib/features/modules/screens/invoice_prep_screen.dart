@@ -45,6 +45,13 @@ class _InvoiceLine {
   double get lineTotal => grossUnitPrice * quantity;
 }
 
+class _ExtensionDevice {
+  final String id;
+  final String name;
+  final bool connected;
+  _ExtensionDevice({required this.id, required this.name, required this.connected});
+}
+
 /// Fatura kesme sürecini hazırlayan modül — luca.com.tr gibi bir e-fatura
 /// portalına elle girerken referans olacak bir ürün listesi üretir (bu
 /// sürümde otomatik form doldurma YOK, bkz. .plan/v0.2.2.md "Açık Notlar").
@@ -59,8 +66,8 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
   final TextEditingController _targetCtrl = TextEditingController();
   final List<_InvoiceLine> _lines = [];
-  bool _extensionConnected = false;
-  String? _extensionDeviceName;
+  List<_ExtensionDevice> _extensionDevices = [];
+  String? _selectedDeviceId;
   Timer? _extensionStatusTimer;
 
   @override
@@ -83,23 +90,30 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
 
   Future<void> _checkExtensionStatus() async {
     try {
-      final resp = await ApiClient.instance.get('/api/invoice-export/extension-status');
+      final resp = await ApiClient.instance.get('/api/invoice-export/devices');
       if (!mounted) return;
-      final connected = resp.success && resp.data?['connected'] == true;
-      final deviceName = connected ? (resp.data?['device_name'] as String?) : null;
-      if (connected != _extensionConnected || deviceName != _extensionDeviceName) {
-        setState(() {
-          _extensionConnected = connected;
-          _extensionDeviceName = deviceName;
-        });
-      }
+      if (!resp.success) return;
+      final list = (resp.data?['data'] as List? ?? [])
+          .map((d) => _ExtensionDevice(
+                id: d['device_id'] as String,
+                name: (d['device_name'] as String?)?.trim().isNotEmpty == true ? d['device_name'] as String : 'Adsız Cihaz',
+                connected: d['connected'] == true,
+              ))
+          .toList();
+      setState(() {
+        _extensionDevices = list;
+        if (_selectedDeviceId == null || !list.any((d) => d.id == _selectedDeviceId)) {
+          final firstConnected = list.where((d) => d.connected).firstOrNull;
+          _selectedDeviceId = (firstConnected ?? list.firstOrNull)?.id;
+        }
+      });
     } catch (_) {
       // sessizce yoksay — bir sonraki periyodik kontrolde tekrar denenecek
     }
   }
 
   Future<void> _exportToExtension() async {
-    if (_lines.isEmpty) return;
+    if (_lines.isEmpty || _selectedDeviceId == null) return;
     final lines = _lines
         .map((l) => {
               'name': l.product.name,
@@ -109,10 +123,14 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
               'vatPercent': l.vatPercent,
             })
         .toList();
-    final resp = await ApiClient.instance.post('/api/invoice-export', {'lines': lines});
+    final resp = await ApiClient.instance.post('/api/invoice-export', {
+      'lines': lines,
+      'target_device_id': _selectedDeviceId,
+      'sender_name': ApiClient.instance.userName ?? 'Inventra Uygulaması',
+    });
     if (!mounted) return;
     if (resp.success) {
-      NotificationService.showSuccess("Liste eklentiye gönderildi. luca.com.tr sekmesine geçip \"Inventra'dan Doldur\" butonuna basın.");
+      NotificationService.showSuccess('Liste eklentiye gönderildi. Tarayıcıda eklenti simgesine tıklayıp onaylayın.');
     } else {
       NotificationService.showError('Liste eklentiye gönderilemedi: ${resp.error ?? 'bilinmeyen hata'}');
     }
@@ -292,40 +310,48 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
                       Text('TOPLAM', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, letterSpacing: 1)),
                       Text('${_total.toStringAsFixed(2)} ₺', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
                       const SizedBox(height: 4),
-                      Tooltip(
-                        message: _extensionConnected
-                            ? 'Bağlı cihaz: ${_extensionDeviceName ?? 'bilinmiyor'}'
-                            : 'Tarayıcı eklentisinden hiç bağlantı sinyali alınamadı',
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 7,
-                              height: 7,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: _extensionConnected ? AppTheme.secondaryAccent : AppTheme.textMuted,
-                              ),
-                            ),
-                            const SizedBox(width: 5),
-                            Text(
-                              _extensionConnected ? 'Eklenti Bağlı' : 'Eklenti Bulunamadı',
-                              style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
-                            ),
-                          ],
+                      if (_extensionDevices.isEmpty)
+                        Text('Eşleştirilmiş tarayıcı eklentisi yok', style: TextStyle(color: AppTheme.textMuted, fontSize: 11))
+                      else
+                        DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _selectedDeviceId,
+                            isDense: true,
+                            style: TextStyle(color: AppTheme.textMain, fontSize: 12),
+                            items: _extensionDevices
+                                .map((d) => DropdownMenuItem(
+                                      value: d.id,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Container(
+                                            width: 7,
+                                            height: 7,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: d.connected ? AppTheme.secondaryAccent : AppTheme.textMuted,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(d.name, overflow: TextOverflow.ellipsis),
+                                        ],
+                                      ),
+                                    ))
+                                .toList(),
+                            onChanged: (v) => setState(() => _selectedDeviceId = v),
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
                 SizedBox(
                   height: 44,
                   child: Tooltip(
-                    message: _extensionConnected
-                        ? 'Listeyi tarayıcı eklentisine gönder'
-                        : 'Önce tarayıcı eklentisini kurup Inventra sunucusuyla eşleştirmeniz gerekiyor',
+                    message: _extensionDevices.isEmpty
+                        ? 'Önce tarayıcı eklentisini kurup Inventra sunucusuyla eşleştirmeniz gerekiyor'
+                        : 'Listeyi seçili cihazdaki eklentiye gönder',
                     child: OutlinedButton.icon(
-                      onPressed: (_lines.isEmpty || !_extensionConnected) ? null : _exportToExtension,
+                      onPressed: (_lines.isEmpty || _selectedDeviceId == null) ? null : _exportToExtension,
                       icon: const Icon(Icons.extension_outlined, size: 16),
                       label: Text(isMobile ? 'AKTAR' : 'EKLENTİYE AKTAR'),
                     ),

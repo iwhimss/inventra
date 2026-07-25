@@ -517,6 +517,18 @@ class ServerDatabaseHelper {
         )
       ''');
     } catch (_) {}
+
+    // Migration 17: Fatura eklentisi — çoklu cihaz hedefleme + gönderen bilgisi
+    try {
+      final cols = _db.select("PRAGMA table_info(invoice_exports)");
+      final colNames = cols.map((c) => c['name'] as String).toSet();
+      if (!colNames.contains('target_device_id')) {
+        _db.execute("ALTER TABLE invoice_exports ADD COLUMN target_device_id TEXT");
+      }
+      if (!colNames.contains('sender_name')) {
+        _db.execute("ALTER TABLE invoice_exports ADD COLUMN sender_name TEXT");
+      }
+    } catch (_) {}
   }
 
   // ─── Convenience Query Methods ──────────────────────────────

@@ -8,27 +8,26 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["storage", "alarms"],
+  "permissions": ["storage", "alarms", "notifications", "activeTab"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "host_permissions": ["https://turmobefatura.luca.com.tr/*"],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "options.html",
+    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "Inventra Fatura Asistanı — Ayarlar"
+    "default_title": "Inventra Fatura Asistanı"
   },
   "options_page": "options.html",
   "content_scripts": [
     {
       "matches": ["https://turmobefatura.luca.com.tr/Invoice/Create*"],
       "js": ["content.js"],
-      "css": ["content.css"],
       "run_at": "document_idle"
     }
   ]

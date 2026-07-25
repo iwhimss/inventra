@@ -1,11 +1,10 @@
 // Inventra Fatura Asistanı — içerik betiği
-// turmobefatura.luca.com.tr/Invoice/Create sayfasında çalışır. Inventra'da
-// hazırlanan fatura satırlarını sunucudan çeker ve sayfadaki fatura formuna
-// otomatik doldurur. DOM seçicileri kullanıcının canlı sayfadan verdiği
-// gerçek HTML'e dayanıyor (bkz. .plan/v0.2.3.md) ama satır indeksleme kuralı
-// ve öneri listesi seçicisi tahmine dayalı — bu yüzden her satır bağımsız
-// işlenir, bir satır başarısız olursa akış durmaz, sadece o satır
-// "eşleşmedi" olarak işaretlenip bir sonrakine geçilir.
+// turmobefatura.luca.com.tr/Invoice/Create sayfasında çalışır. Sadece DOM
+// doldurma mantığını içerir — sunucuyla konuşmaz (bu sayfanın kendi
+// Content-Security-Policy'si content script'ten yapılan çapraz-kaynak
+// fetch() çağrılarını engelliyor, bu yüzden tüm ağ isteği background.js'te
+// toplandı). Popup, mesajlarla bu betiğe "şu satırları doldur" der, bu
+// betik ilerlemesini yine mesajlarla popup'a bildirir.
 
 const ALLOWED_VAT_RATES = [0, 1, 8, 10, 18, 20];
 const SUGGESTION_SELECTOR = '.Typeahead-selectable';
@@ -168,12 +167,12 @@ async function fillRow(index, line) {
   return { status: 'ok', warnings };
 }
 
-async function runFill() {
+async function runFill(lines) {
   state.running = true;
   state.stopped = false;
   state.paused = false;
-  state.results = state.lines.map((l) => ({ name: l.name, status: 'pending' }));
-  renderPanel();
+  state.lines = lines;
+  state.results = lines.map((l) => ({ name: l.name, status: 'pending' }));
 
   for (let i = 0; i < state.lines.length; i++) {
     if (state.stopped) {
@@ -194,97 +193,33 @@ async function runFill() {
     } catch (e) {
       state.results[i] = { name: state.lines[i].name, status: 'unmatched', reason: String(e) };
     }
-    renderPanel();
   }
 
   state.running = false;
-  renderPanel();
 }
 
-// ─── Panel UI ─────────────────────────────────────────────
+// ─── Popup ile mesajlaşma ─────────────────────────────────
 
-function ensurePanel() {
-  let panel = document.getElementById('inventra-panel');
-  if (panel) return panel;
-  panel = document.createElement('div');
-  panel.id = 'inventra-panel';
-  document.body.appendChild(panel);
-  return panel;
-}
-
-function statusIcon(status) {
-  if (status === 'ok') return '<span class="ip-ok">✓</span>';
-  if (status === 'unmatched') return '<span class="ip-fail">✗</span>';
-  if (status === 'stopped') return '<span class="ip-wait">⏸</span>';
-  return '<span class="ip-wait">…</span>';
-}
-
-function renderPanel() {
-  const panel = ensurePanel();
-  const rows = state.results
-    .map((r) => `<div class="ip-row-status"><span class="ip-name">${escapeHtml(r.name)}</span>${statusIcon(r.status)}</div>`)
-    .join('');
-
-  const okCount = state.results.filter((r) => r.status === 'ok').length;
-  const failCount = state.results.filter((r) => r.status === 'unmatched').length;
-
-  panel.innerHTML = `
-    <div class="ip-header">
-      <span>Inventra Fatura Asistanı</span>
-      <span class="ip-close" id="ip-close-btn">✕</span>
-    </div>
-    <div class="ip-body">
-      ${state.results.length === 0
-        ? '<button id="ip-fetch-btn">Inventra\'dan Doldur</button>'
-        : `
-          ${rows}
-          <div class="ip-summary">${okCount}/${state.results.length} satır dolduruldu${failCount ? `, ${failCount} satır eşleşmedi` : ''}</div>
-          ${state.running
-            ? `<button class="secondary" id="ip-pause-btn">${state.paused ? 'Devam Et' : 'Duraklat'}</button><button class="secondary" id="ip-stop-btn">Durdur</button>`
-            : `<button id="ip-fetch-btn">Yeni Liste Çek</button>`}
-        `}
-    </div>
-  `;
-
-  document.getElementById('ip-close-btn')?.addEventListener('click', () => panel.remove());
-  document.getElementById('ip-fetch-btn')?.addEventListener('click', fetchAndRun);
-  document.getElementById('ip-pause-btn')?.addEventListener('click', () => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === 'inventra:start-fill') {
+    runFill(message.lines || []);
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message?.type === 'inventra:pause-toggle') {
     state.paused = !state.paused;
-    renderPanel();
-  });
-  document.getElementById('ip-stop-btn')?.addEventListener('click', () => {
+    sendResponse({ ok: true, paused: state.paused });
+    return false;
+  }
+  if (message?.type === 'inventra:stop') {
     state.stopped = true;
     state.paused = false;
-  });
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-async function fetchAndRun() {
-  const { serverUrl, apiKey } = await chrome.storage.local.get(['serverUrl', 'apiKey']);
-  if (!serverUrl || !apiKey) {
-    alert('Önce eklenti ayarlarından Inventra sunucusuyla eşleştirme yapmanız gerekiyor.');
-    return;
+    sendResponse({ ok: true });
+    return false;
   }
-  try {
-    const resp = await fetch(`${serverUrl}/api/invoice-export/pending`, {
-      headers: { 'x-api-key': apiKey },
-    });
-    const json = await resp.json();
-    if (!json.success || !json.data || !json.data.lines || json.data.lines.length === 0) {
-      alert('Bekleyen bir fatura listesi bulunamadı. Önce Inventra\'da "Eklentiye Aktar" butonuna basın.');
-      return;
-    }
-    state.lines = json.data.lines;
-    await runFill();
-  } catch (e) {
-    alert(`Sunucudan liste alınamadı: ${e}`);
+  if (message?.type === 'inventra:get-fill-state') {
+    sendResponse({ ok: true, state });
+    return false;
   }
-}
-
-ensurePanel();
-renderPanel();
+  return false;
+});

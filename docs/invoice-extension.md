@@ -6,11 +6,14 @@ Eklenti Chrome Web Store'a **yayınlanmıyor** — proje deposunda `inventra_inv
 
 ## Nasıl Çalışır?
 
-Inventra masaüstü/mobil uygulaması bir web sayfası olmadığı için tarayıcı eklentisiyle doğrudan konuşamaz. Bunun yerine zaten çalışan `inventra_server`'ı köprü olarak kullanır:
+Inventra masaüstü/mobil uygulaması bir web sayfası olmadığı için tarayıcı eklentisiyle doğrudan konuşamaz. Bunun yerine zaten çalışan `inventra_server`'ı köprü olarak kullanır. Birden fazla tarayıcı/cihaza eklenti kurup eşleştirebilirsiniz — Inventra'da fatura hazırlarken hangisine göndereceğinizi seçersiniz.
 
-1. Inventra'da "Fatura Hazırlama" sayfasında liste hazırlanır, **"EKLENTİYE AKTAR"** butonuna basılır → liste sunucuya gönderilir.
-2. Tarayıcıda `turmobefatura.luca.com.tr` fatura oluşturma sayfası açıkken, eklentinin sağ üstte beliren panelinden **"Inventra'dan Doldur"** tıklanır → eklenti listeyi sunucudan çekip formu doldurmaya başlar.
-3. Eklenti periyodik olarak sunucuya "heartbeat" gönderir; Inventra uygulaması bu sayede "Eklenti Bağlı ✓" / "Eklenti Bulunamadı" durumunu gösterebilir.
+1. Inventra'da "Fatura Hazırlama" sayfasında liste hazırlanır, hedef cihaz (eşleştirilmiş eklentilerden biri) seçilip **"EKLENTİYE AKTAR"** butonuna basılır → liste, seçilen cihaza özel olarak sunucuya gönderilir.
+2. Tarayıcıda yeni bir liste geldiğinde eklenti bir **bildirim** gösterir. Araç çubuğundaki eklenti simgesine tıklayınca açılan popup'ta *"{kullanıcı adı} kullanıcısından N ürünlük liste geldi, kabul edilsin mi?"* sorusu çıkar.
+3. **Kabul Et**'e basılınca liste sunucudan çekilir ve popup "Doldur" ilerleme ekranına geçer; `turmobefatura.luca.com.tr` fatura oluşturma sayfası o an açık ve aktifse doldurma otomatik başlar.
+4. Eklenti periyodik olarak sunucuya "heartbeat" gönderir; Inventra uygulaması bu sayede her eşleştirilmiş cihazın bağlı olup olmadığını gösterebilir.
+
+**Not:** Popup, sadece `turmobefatura.luca.com.tr/Invoice/Create` sayfası aktif sekmedeyken doldurma kontrollerini gösterir — başka bir sayfadaysanız önce o sekmeye geçmeniz gerekir.
 
 ## Kurulum
 
@@ -22,18 +25,22 @@ Inventra masaüstü/mobil uygulaması bir web sayfası olmadığı için tarayı
 
 ## Sunucuyla Eşleştirme
 
-1. Eklenti ikonuna tıklayınca açılan pencerede **Inventra Sunucu Adresi**ni girin (ör. `http://192.168.1.100:5000` veya VDS'inizin adresi).
-2. **"Eşleştirme İste"** butonuna basın — tarayıcı sunucu adresine erişim izni isteyecek, onaylayın.
-3. Inventra uygulamasını açıp **Ayarlar → Cihazlar** (veya sunucu admin panelindeki **Cihazlar** sayfası) üzerinden bekleyen isteği onaylayın — bu, mevcut POS cihaz eşleştirme sistemiyle birebir aynı akıştır.
-4. Onaylandıktan birkaç saniye sonra eklenti penceresinde **"Bağlandı ✓"** görünecek.
+1. Eklenti ikonuna sağ tıklayıp **"Seçenekler"** (veya popup'taki **"⚙ Ayarlar"** bağlantısı) ile Ayarlar sayfasını açın.
+2. **Inventra Sunucu Adresi**ni girin — `http://` veya `https://` ile başlamalı (ör. `http://192.168.1.100:5000` yerel ağda, `https://...` VDS/domain kullanıyorsanız — sunucunuz hangisini destekliyorsa onu yazın, protokol otomatik tahmin edilmez).
+3. **"Eşleştirme İste"** butonuna basın — tarayıcı sunucu adresine erişim izni isteyecek, onaylayın.
+4. Inventra uygulamasını açıp **Ayarlar → Cihazlar** (veya sunucu admin panelindeki **Cihazlar** sayfası) üzerinden bekleyen isteği onaylayın — bu, mevcut POS cihaz eşleştirme sistemiyle birebir aynı akıştır. Cihaz listesinde eklenti "🧩 Tarayıcı Eklentisi" etiketiyle görünür.
+5. Onay arkaplanda otomatik algılanır (en geç ~1 dakika içinde) — Ayarlar sayfasını açık tutmanıza gerek yoktur. Bağlandığında araç çubuğu simgesinde yeşil bir ✓ rozeti belirir.
+
+Birden fazla tarayıcı/bilgisayara eklenti kurup ayrı ayrı eşleştirebilirsiniz; her biri Cihazlar listesinde ayrı bir isimle görünür ve Inventra'da fatura gönderirken hangisini hedefleyeceğinizi seçersiniz.
 
 ## Kullanım
 
-1. Inventra'da fatura listesini hazırlayıp **"EKLENTİYE AKTAR"**a basın (bu buton sadece eklenti bağlıyken aktiftir).
-2. `turmobefatura.luca.com.tr` fatura oluşturma sayfasını açın.
-3. Sağ üstte beliren Inventra panelinden **"Inventra'dan Doldur"**a basın.
-4. Eklenti satırları sırayla doldururken panelde her satırın durumu görünür (✓ dolduruldu / ✗ eşleşmedi). İşlem sırasında **"Duraklat"** veya **"Durdur"** butonlarıyla süreci kontrol edebilirsiniz.
-5. İşlem bitince panelde kaç satırın başarıyla dolduğu, kaç satırın eşleşmediği özetlenir — eşleşmeyen ürünleri elle tamamlamanız gerekir.
+1. Inventra'da fatura listesini hazırlayın, alttaki dropdown'dan **hedef cihazı** (hangi tarayıcıdaki eklentiye gönderileceğini) seçin, **"EKLENTİYE AKTAR"**a basın.
+2. Tarayıcıda yeni liste geldiğinde bir bildirim belirir (isterseniz beklemeden de simgeye tıklayabilirsiniz).
+3. Eklenti simgesine tıklayın — popup'ta gönderen kullanıcı ve ürün sayısıyla birlikte onay ekranı çıkar: **Kabul Et** veya **Reddet**.
+4. **Kabul Et**'e bastığınızda, `turmobefatura.luca.com.tr` fatura oluşturma sayfası aktif sekmedeyse doldurma otomatik başlar. Popup'ta her satırın durumu görünür (✓ dolduruldu / ✗ eşleşmedi), **"Duraklat"** veya **"Durdur"** ile süreci kontrol edebilirsiniz.
+5. Popup'ı kapatıp tekrar açsanız da (doldurma arkaplanda devam ettiği için) ilerlemeyi kaldığı yerden görürsünüz.
+6. İşlem bitince kaç satırın başarıyla dolduğu, kaç satırın eşleşmediği özetlenir — eşleşmeyen ürünleri elle tamamlamanız gerekir.
 
 ## Güncelleme
 
@@ -42,8 +49,14 @@ Chrome Web Store'da olmadığı için **otomatik güncelleme yoktur**. Yeni bir 
 1. Yeni `inventra_invoice_extension/` klasörünü (veya GitHub Release'deki güncel zip'i) indirip eski klasörün üzerine yazın.
 2. `chrome://extensions` sayfasında eklentinin kartındaki **"Yenile"** (yenileme/refresh) ikonuna basın.
 
+## Sorun Giderme
+
+- **"Sunucudan liste alınamadı: Failed to fetch"** hatası artık oluşmamalı — önceki sürümde bu hata, sunucuyla konuşan kodun fatura sayfasına enjekte edilen içerik betiğinde çalışmasından kaynaklanıyordu (sayfanın kendi güvenlik politikası dış isteği engelliyordu). Artık tüm sunucu iletişimi eklentinin arkaplan servisinde toplandığı için bu sınıf hata oluşmamalı. Yine de bir hata görürseniz popup'taki mesajı olduğu gibi bildirin.
+- **"İzin isteği başarısız" / eşleştirme çalışmıyor:** adresin `http://` veya `https://` ile doğru başladığından emin olun (VDS/domain genelde `https://`, yerel ağ IP'si genelde `http://`).
+- Popup "Sayfayla bağlantı kurulamadı" derse: sayfayı yenileyin (eklenti güncellendikten hemen sonra açık kalan sekmelerde içerik betiği yeniden yüklenmemiş olabilir).
+
 ## Bilinen Sınırlamalar
 
 - Eklentinin ürün eşleştirme mantığı, luca.com.tr'nin kendi ürün arama önerilerine (typeahead) dayanır — sitenin kendi kataloğunda olmayan bir ürün adı için öneri çıkmaz, o satır otomatik olarak "eşleşmedi" işaretlenip bir sonraki satıra geçilir.
-- KDV oranı sitede sadece `0, 1, 8, 10, 18, 20` değerlerini kabul ediyor; ürününüzün KDV oranı bu listede yoksa en yakın değere yuvarlanır ve panelde uyarı olarak gösterilir.
-- İlk sürümde (v0.2.2) bazı DOM seçicileri (özellikle 2. ve sonraki satırların alan id'leri, öneri listesinin CSS seçicisi) canlı sayfa üzerinde tam doğrulanamadan yazıldı — bazı satırlarda beklenmeyen davranış görülürse lütfen bildirin, bir sonraki sürümde düzeltilecektir.
+- KDV oranı sitede sadece `0, 1, 8, 10, 18, 20` değerlerini kabul ediyor; ürününüzün KDV oranı bu listede yoksa en yakın değere yuvarlanır ve popup'ta uyarı olarak gösterilir.
+- İlk sürümde (v0.2.2) bazı DOM seçicileri (özellikle 2. ve sonraki satırların alan id'leri, öneri listesinin CSS seçicisi) canlı sayfa üzerinde tam doğrulanamadan yazıldı — bazı satırlarda beklenmeyen davranış görülürse lütfen bildirin.
