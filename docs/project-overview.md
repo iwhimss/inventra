@@ -51,7 +51,7 @@ inventra/
 │       │   ├── network/          ← ApiClient, WebSocketService, SyncManager
 │       │   ├── services/         ← AutoBackup, CartTransfer, Sound, Version
 │       │   ├── theme/            ← AppTheme, ThemeProvider
-│       │   └── widgets/          ← CustomTitleBar, ortak bileşenler
+│       │   └── widgets/          ← CustomTitleBar (v0.2.1-patch: MaterialApp.builder'da global katman, tüm sayfa/dialogların üzerinde), ortak bileşenler
 │       └── features/
 │           ├── auth/             ← Login, ServerConnect
 │           ├── pos/              ← Satış ekranı, sepet

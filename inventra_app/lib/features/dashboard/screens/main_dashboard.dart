@@ -17,7 +17,6 @@ import 'package:inventra_app/features/settings/screens/settings_screen.dart';
 import 'package:inventra_app/features/backup/screens/converter_screen.dart';
 import 'package:inventra_app/features/auth/providers/auth_provider.dart';
 import 'package:inventra_app/features/auth/screens/login_screen.dart';
-import 'package:inventra_app/core/widgets/custom_title_bar.dart';
 import 'package:inventra_app/features/clients/screens/clients_screen.dart';
 import 'package:inventra_app/features/logs/screens/activity_logs_screen.dart';
 import 'package:inventra_app/features/modules/screens/modules_screen.dart';
@@ -163,7 +162,6 @@ class _MainDashboardState extends ConsumerState<MainDashboard>
     return Scaffold(
       body: Column(
         children: [
-          const CustomTitleBar(),
           Expanded(
             child: Row(
               children: [

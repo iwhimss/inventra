@@ -15,7 +15,13 @@ import 'package:inventra_app/features/auth/screens/server_connect_screen.dart';
 import 'package:inventra_app/features/auth/providers/auth_provider.dart';
 import 'package:inventra_app/features/dashboard/screens/main_dashboard.dart';
 import 'package:inventra_app/features/pos/providers/sync_provider.dart';
+import 'package:inventra_app/core/widgets/custom_title_bar.dart';
 import 'package:window_manager/window_manager.dart';
+
+const double _kTitleBarHeight = 38;
+
+bool get _hasDesktopChrome =>
+    !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
 /// Release modda Flutter'ın varsayılan davranışı, build sırasında fırlatılan
 /// hataları düz gri bir kutuyla sessizce gizlemektir (debug modda kırmızı
@@ -127,7 +133,23 @@ class InventraApp extends ConsumerWidget {
                 ),
               )
             : mq;
-        return MediaQuery(data: clampedData, child: child!);
+        // Özel başlık çubuğu (küçült/büyüt/kapat) burada, Navigator'ın ÜZERİNDE,
+        // global bir katman olarak render edilir — böylece hiçbir dialog veya
+        // sayfa (route) onu kaplayamaz. Her sayfa artık otomatik olarak title
+        // bar'a sahip olur; ayrıca sayfa içine eklemeye gerek kalmaz.
+        return MediaQuery(
+          data: clampedData,
+          child: Stack(
+            children: [
+              Padding(
+                padding: EdgeInsets.only(top: _hasDesktopChrome ? _kTitleBarHeight : 0),
+                child: child!,
+              ),
+              if (_hasDesktopChrome)
+                const Positioned(top: 0, left: 0, right: 0, child: CustomTitleBar()),
+            ],
+          ),
+        );
       },
       home: const AppGate(),
     );

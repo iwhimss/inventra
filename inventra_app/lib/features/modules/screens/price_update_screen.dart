@@ -32,6 +32,7 @@ class _PriceUpdateScreenState extends ConsumerState<PriceUpdateScreen> {
   final TextEditingController _discountCtrl = TextEditingController();
   final TextEditingController _vatCtrl = TextEditingController(text: '20');
   final TextEditingController _profitCtrl = TextEditingController();
+  final TextEditingController _quickPriceCtrl = TextEditingController();
   final TextEditingController _searchCtrl = TextEditingController();
 
   final List<_PriceLine> _lines = [];
@@ -42,6 +43,7 @@ class _PriceUpdateScreenState extends ConsumerState<PriceUpdateScreen> {
     _discountCtrl.dispose();
     _vatCtrl.dispose();
     _profitCtrl.dispose();
+    _quickPriceCtrl.dispose();
     _searchCtrl.dispose();
     for (final l in _lines) {
       l.newListPriceCtrl.dispose();
@@ -53,13 +55,49 @@ class _PriceUpdateScreenState extends ConsumerState<PriceUpdateScreen> {
   double get _vat => double.tryParse(_vatCtrl.text.replaceAll(',', '.')) ?? 0;
   double get _profit => double.tryParse(_profitCtrl.text.replaceAll(',', '.')) ?? 0;
 
-  double? _computeNewPrice(_PriceLine line) {
-    final listPrice = double.tryParse(line.newListPriceCtrl.text.replaceAll(',', '.'));
-    if (listPrice == null || listPrice <= 0) return null;
+  double _computeFromListPrice(double listPrice) {
     final afterDiscount = listPrice * (1 - _discount / 100);
     final afterVat = afterDiscount * (1 + _vat / 100);
     final afterProfit = afterVat * (1 + _profit / 100);
     return afterProfit.round().toDouble();
+  }
+
+  double? _computeNewPrice(_PriceLine line) {
+    final listPrice = double.tryParse(line.newListPriceCtrl.text.replaceAll(',', '.'));
+    if (listPrice == null || listPrice <= 0) return null;
+    return _computeFromListPrice(listPrice);
+  }
+
+  /// Ürün seçmeden, sadece fiyat girerek yapılan bağımsız hızlı hesap sonucu.
+  double? get _quickResult {
+    final listPrice = double.tryParse(_quickPriceCtrl.text.replaceAll(',', '.'));
+    if (listPrice == null || listPrice <= 0) return null;
+    return _computeFromListPrice(listPrice);
+  }
+
+  Future<void> _confirmClearAll() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.panelBackground,
+        title: const Text('Listeyi Temizle'),
+        content: const Text('Seçili tüm ürünler listeden kaldırılacak. Emin misiniz?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('İptal', style: TextStyle(color: AppTheme.textMuted))),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.dangerAccent),
+            child: const Text('TEMİZLE'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      for (final l in _lines) {
+        l.newListPriceCtrl.dispose();
+      }
+      setState(() => _lines.clear());
+    }
   }
 
   void _addProduct(Product p) {
@@ -141,7 +179,16 @@ class _PriceUpdateScreenState extends ConsumerState<PriceUpdateScreen> {
             _buildRateInputs(isMobile),
             const SizedBox(height: 16),
             _buildSearchBar(),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            if (_lines.isNotEmpty)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _confirmClearAll,
+                  icon: Icon(Icons.delete_sweep, size: 16, color: AppTheme.dangerAccent),
+                  label: Text('Tümünü Sil', style: TextStyle(color: AppTheme.dangerAccent)),
+                ),
+              ),
             Expanded(
               child: _lines.isEmpty
                   ? Center(child: Text('Ürün arayıp seçtikçe burada listelenecek.', style: TextStyle(color: AppTheme.textMuted)))
@@ -207,6 +254,21 @@ class _PriceUpdateScreenState extends ConsumerState<PriceUpdateScreen> {
               onChanged: (_) => setState(() {}),
             ),
           ),
+          SizedBox(
+            width: isMobile ? double.infinity : 200,
+            child: TextField(
+              controller: _quickPriceCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Hızlı Hesap — Fiyat (₺)', isDense: true, prefixIcon: Icon(Icons.calculate_outlined, size: 18)),
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
+          if (_quickResult != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(color: AppTheme.secondaryAccent.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
+              child: Text('${_quickResult!.toStringAsFixed(0)} ₺', style: TextStyle(color: AppTheme.secondaryAccent, fontWeight: FontWeight.w900, fontSize: 18)),
+            ),
         ],
       ),
     );

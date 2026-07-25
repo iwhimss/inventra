@@ -1,7 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:inventra_app/core/theme/app_theme.dart';
-import 'package:inventra_app/core/widgets/custom_title_bar.dart';
 import 'package:inventra_app/features/pos/providers/sync_provider.dart';
 import 'dart:io';
 import 'dart:convert';
@@ -132,7 +131,6 @@ class _ServerConnectScreenState extends ConsumerState<ServerConnectScreen> {
       backgroundColor: AppTheme.darkBackground,
       body: Column(
         children: [
-          const CustomTitleBar(),
           Expanded(
             child: Center(
               child: SingleChildScrollView(

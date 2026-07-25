@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:inventra_app/core/theme/app_theme.dart';
 import 'package:inventra_app/features/dashboard/screens/main_dashboard.dart';
 import 'package:inventra_app/features/auth/providers/auth_provider.dart';
-import 'package:inventra_app/core/widgets/custom_title_bar.dart';
 import 'package:inventra_app/core/database/database_helper.dart';
 import 'package:inventra_app/core/services/sound_service.dart';
 import 'package:inventra_app/features/pos/providers/sync_provider.dart';
@@ -124,7 +123,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       backgroundColor: AppTheme.darkBackground,
       body: Column(
         children: [
-          const CustomTitleBar(),
           Expanded(
             child: Center(
               child: SingleChildScrollView(

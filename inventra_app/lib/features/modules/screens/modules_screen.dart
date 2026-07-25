@@ -44,7 +44,7 @@ class ModulesScreen extends StatelessWidget {
               itemCount: _modules.length,
               gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                 maxCrossAxisExtent: 320,
-                mainAxisExtent: 130,
+                mainAxisExtent: 150,
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
               ),
