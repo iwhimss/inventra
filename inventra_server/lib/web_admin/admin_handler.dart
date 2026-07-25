@@ -362,7 +362,7 @@ class AdminHandler {
 
   // ─── Users ────────────────────────────────────────────────
 
-  /// Uygulamadaki (`users_roles_tab.dart` → `_buildPermChecks`) 9 izin anahtarıyla
+  /// Uygulamadaki (`users_roles_tab.dart` → `_buildPermChecks`) 10 izin anahtarıyla
   /// birebir eşleşir — web dashboard ile uygulama içi izin yönetimi aynı granülerliği paylaşır.
   static const Map<String, String> _permLabels = {
     'pos': 'Satış Ekranı (POS)',
@@ -374,6 +374,7 @@ class AdminHandler {
     'converter': 'Dönüştürücü',
     'movements': 'Hareketler',
     'clients': 'Müşteri/Tedarikçi',
+    'modules': 'Modüller',
   };
 
   String _permCheckboxesHtml(Map<String, dynamic> perms) {

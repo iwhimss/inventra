@@ -14,6 +14,7 @@
 - **Kasa Yönetimi** — Açılış/kapanış, günlük rapor
 - **Raporlar & Analitik** — Satış/nakit/kart/veresiye/indirim/iade grafikleri, gün seçimi, özel tarih aralığı
 - **Etiket Tasarımcısı** — Özelleştirilebilir ürün etiketi şablonları
+- **Modüller** — Genişleyebilir ek sistemler sayfası. İlk modül: **Fiyat Güncelleme** — toptancı fiyat listesinden iskonto/KDV/kâr oranına göre yeni satış fiyatını otomatik hesaplar, sepet arama sistemiyle birden fazla ürün seçip toplu güncelleyebilir
 - **Otomatik Yedekleme** — Kullanıcılar, şablonlar, Excel, müşteri verileri
 - **Cihaz Eşleştirme** — QR/IP tabanlı güvenli cihaz pairing sistemi
 - **Çoklu Cihaz** — Tek sunucu, birden fazla POS terminali

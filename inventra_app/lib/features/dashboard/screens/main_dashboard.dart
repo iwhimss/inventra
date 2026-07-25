@@ -20,6 +20,7 @@ import 'package:inventra_app/features/auth/screens/login_screen.dart';
 import 'package:inventra_app/core/widgets/custom_title_bar.dart';
 import 'package:inventra_app/features/clients/screens/clients_screen.dart';
 import 'package:inventra_app/features/logs/screens/activity_logs_screen.dart';
+import 'package:inventra_app/features/modules/screens/modules_screen.dart';
 import 'package:inventra_app/features/auth/screens/server_connect_screen.dart';
 import 'package:inventra_app/main.dart' show AppGate;
 
@@ -42,6 +43,7 @@ final _allNavItems = [
   _NavItem('movements', Icons.history, 'Hareketler', 'Aktivite ve stok logları', Colors.cyan, const ActivityLogsScreen()),
   _NavItem('converter', Icons.swap_horiz, 'Dönüştürücü', 'Format dönüştürme', Colors.teal, const ConverterScreen()),
   _NavItem('labels', Icons.qr_code_2, 'Etiket Tasarımı', 'Barkod ve etiket', Colors.purpleAccent, const LabelDesignerScreen()),
+  _NavItem('modules', Icons.extension, 'Modüller', 'Ek sistemler', Colors.deepOrange, const ModulesScreen()),
   _NavItem('settings', Icons.settings, 'Ayarlar', 'Uygulama ayarları', Colors.grey, const SettingsScreen()),
 ];
 

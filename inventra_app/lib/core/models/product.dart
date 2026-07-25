@@ -37,6 +37,44 @@ class Product {
     required this.updatedAt,
   });
 
+  Product copyWith({
+    String? barcode,
+    String? name,
+    double? stock,
+    double? purchasePrice,
+    double? salePrice,
+    double? salePrice2,
+    double? salePrice3,
+    double? vatRate,
+    String? unit,
+    bool? isFastProduct,
+    String? keywords,
+    String? productGroup,
+    String? imagePath,
+    String? shelfLocation,
+    DateTime? updatedAt,
+  }) {
+    return Product(
+      id: id,
+      barcode: barcode ?? this.barcode,
+      name: name ?? this.name,
+      stock: stock ?? this.stock,
+      purchasePrice: purchasePrice ?? this.purchasePrice,
+      salePrice: salePrice ?? this.salePrice,
+      salePrice2: salePrice2 ?? this.salePrice2,
+      salePrice3: salePrice3 ?? this.salePrice3,
+      vatRate: vatRate ?? this.vatRate,
+      unit: unit ?? this.unit,
+      isFastProduct: isFastProduct ?? this.isFastProduct,
+      keywords: keywords ?? this.keywords,
+      productGroup: productGroup ?? this.productGroup,
+      imagePath: imagePath ?? this.imagePath,
+      shelfLocation: shelfLocation ?? this.shelfLocation,
+      createdAt: createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,

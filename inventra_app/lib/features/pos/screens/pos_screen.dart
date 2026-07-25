@@ -32,6 +32,7 @@ import 'package:inventra_app/features/auth/providers/auth_provider.dart';
 import 'package:inventra_app/core/utils/responsive_utils.dart';
 import 'package:inventra_app/core/utils/string_utils.dart';
 import 'package:inventra_app/features/pos/screens/return_screen.dart';
+import 'package:inventra_app/core/utils/product_search.dart';
 
 class PosScreen extends ConsumerStatefulWidget {
   const PosScreen({super.key});
@@ -1742,31 +1743,10 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
               final barcodeIndex = ref.watch(productBarcodeProvider);
               final effectiveShowQuick = _showQuickProducts && hasFastProducts;
               var filtered = products.where((p) {
-                final nName = p.name.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
-                final nBarcode = p.barcode.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
-                final strippedBarcode = p.barcode.replaceFirst(RegExp(r'^0+'), '').toLowerCase();
-                final strippedQuery = query.replaceFirst(RegExp(r'^0+'), '');
-
-                bool matchesSearch = nName.contains(query) || nBarcode.contains(query) ||
-                                     (strippedQuery.isNotEmpty && strippedBarcode.contains(strippedQuery));
-                // Alias barkod havuzunda da ara
-                if (!matchesSearch && query.isNotEmpty) {
-                  matchesSearch = barcodeIndex.aliasesOf(p.id).any((b) => b.toLowerCase().contains(query));
-                }
-                // Also search keywords
-                if (p.keywords != null && p.keywords!.isNotEmpty) {
-                  final nKeywords = p.keywords!.replaceAll('I', 'ı').replaceAll('İ', 'i').toLowerCase();
-                  matchesSearch = matchesSearch || nKeywords.contains(query);
-                }
-                // Çoklu kelime — sıra bağımsız: "ceresit silikon" → "Silikon Ceresit" bulur
-                if (!matchesSearch && query.contains(' ')) {
-                  final words = query.split(' ').where((w) => w.length >= 2).toList();
-                  if (words.isNotEmpty && words.every((w) => nName.contains(w))) matchesSearch = true;
-                }
                 if (effectiveShowQuick && query.isEmpty) {
                   return p.isFastProduct == true;
                 }
-                return matchesSearch;
+                return matchesProductQuery(p, query, barcodeIndex);
               }).toList();
 
               if (filtered.isEmpty) {

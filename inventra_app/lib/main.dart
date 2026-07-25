@@ -1,5 +1,5 @@
-﻿import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
+﻿import 'dart:ui';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:inventra_app/core/database/database_helper.dart';
@@ -17,8 +17,41 @@ import 'package:inventra_app/features/dashboard/screens/main_dashboard.dart';
 import 'package:inventra_app/features/pos/providers/sync_provider.dart';
 import 'package:window_manager/window_manager.dart';
 
+/// Release modda Flutter'ın varsayılan davranışı, build sırasında fırlatılan
+/// hataları düz gri bir kutuyla sessizce gizlemektir (debug modda kırmızı
+/// ekran + hata metni gösterir). Bu, gerçek hataların teşhis edilmesini
+/// imkansız hale getiriyordu — artık release modda da gerçek hata mesajı
+/// gösteriliyor.
+void _setupErrorVisibility() {
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    return Container(
+      color: const Color(0xFF2C2C2E),
+      padding: const EdgeInsets.all(16),
+      alignment: Alignment.center,
+      child: SingleChildScrollView(
+        child: Text(
+          'Bir hata oluştu:\n\n${details.exceptionAsString()}',
+          style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+        ),
+      ),
+    );
+  };
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    debugPrint('FlutterError: ${details.exceptionAsString()}');
+  };
+
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    debugPrint('PlatformDispatcher error: $error\n$stack');
+    return true;
+  };
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  _setupErrorVisibility();
 
   // Lock orientation to portrait on mobile devices
   if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {

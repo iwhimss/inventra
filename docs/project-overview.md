@@ -278,14 +278,18 @@ App                          Server                     Admin
 ```
 MainDashboard
 ├── POS Ekranı         ← Varsayılan açılış
-├── Ürünler
-├── Analitik           ← Dashboard + Raporlar + Satış Geçmişi
-├── Müşteriler & Tedarikçiler
-├── Kasa (Vardiya)
-├── Etiket Tasarımcısı
-├── Ayarlar
-└── Loglar
+├── Stoklar
+├── Müşteri/Tedarikçi
+├── Geçmiş İşlemler
+├── Raporlar
+├── Hareketler         ← Aktivite ve stok logları
+├── Dönüştürücü
+├── Etiket Tasarımı
+├── Modüller           ← Ek sistemler (v0.2.1: Fiyat Güncelleme)
+└── Ayarlar
 ```
+
+Her sekme `permKey` ile izin sistemine bağlıdır (10 izin anahtarı — bkz. Kullanıcılar & Roller bölümü).
 
 ### POS Ekranı
 
@@ -309,6 +313,12 @@ En kritik ekran. 5 paralel sepet sekmesi destekler (aynı anda 5 farklı müşte
 - Toplu işlemler: stok düzelt, fiyat güncelle, sil, Excel import/export
 - Kritik stok uyarısı seviyesi
 - Barkod desteği (harici okuyucu veya kamera)
+
+### Modüller (v0.2.1)
+
+Genişleyebilir ek sistemler sayfası (`modules_screen.dart`) — `_ModuleDef` listesine yeni bir kart eklemek yeni bir modül eklemek için yeterli.
+
+- **Fiyat Güncelleme** (`price_update_screen.dart`) — toptancının yeni fiyat listesindeki tutarı, İskonto/KDV/Kâr (%) oranlarına göre otomatik hesaplayıp ürünün satış fiyatını günceller: `sonuç = round(yeni_fiyat × (1 − iskonto/100) × (1 + kdv/100) × (1 + kar/100))`. Ürün arama, POS ekranıyla aynı eşleştirme mantığını kullanan paylaşılan `core/utils/product_search.dart` yardımcısı üzerinden yapılır (isim/barkod/alias barkod/anahtar kelime, barkod kamerası dahil). Birden fazla ürün seçilip tek seferde toplu güncellenebilir.
 
 ### Analitik & Raporlar
 

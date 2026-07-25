@@ -58,6 +58,7 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
       'converter': 'Dönüştürücü',
       'movements': 'Hareketler',
       'clients': 'Müşteri/Tedarikçi',
+      'modules': 'Modüller',
     };
     return labels.entries.map((e) => CheckboxListTile(
       dense: true, title: Text(e.value, style: const TextStyle(fontSize: 13)), value: perms[e.key] ?? false,
@@ -137,15 +138,16 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
     final nameCtrl = TextEditingController();
     final passwordCtrl = TextEditingController();
     String role = 'staff';
-    Map<String, bool> perms = {'pos': true, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false};
+    Map<String, bool> perms = {'pos': true, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false, 'modules': false};
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDState) => AlertDialog(
+          backgroundColor: AppTheme.panelBackground,
           title: const Text('Yeni Kullanıcı'),
           content: SizedBox(
-            width: context.dialogWidth(400),
+            width: ctx.dialogWidth(400),
             child: SingleChildScrollView(child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -181,7 +183,7 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
                       }
                     } else {
                       // 'staff': varsayılan personel izinlerine sıfırla
-                      perms = {'pos': true, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false};
+                      perms = {'pos': true, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false, 'modules': false};
                     }
                   }),
                 ),
@@ -236,17 +238,22 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
     final staffIdCtrl = TextEditingController(text: user['staff_id']?.toString() ?? '');
 
     // Tüm izin anahtarlarının başlangıç değerleri (eksik key'ler için false varsayılanı)
-    const _basePerms = {'pos': false, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false};
+    const _basePerms = {'pos': false, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false, 'modules': false};
     Map<String, bool> perms;
     try {
-      final pStr = user['permissions']?.toString() ?? '';
-      if (pStr.startsWith('{')) {
+      final rawPerms = user['permissions'];
+      if (rawPerms is Map) {
+        // Sunucudan zaten decode edilmiş bir Map gelmiş olabilir (String beklemek yerine doğrudan ele al)
+        final parsed = Map<String, dynamic>.from(rawPerms).map((k, v) => MapEntry(k, v == true));
+        perms = {..._basePerms, ...parsed};
+      } else if ((rawPerms?.toString() ?? '').startsWith('{')) {
+        final pStr = rawPerms.toString();
         final parsed = (json.decode(pStr) as Map<String, dynamic>).map((k, v) => MapEntry(k, v == true));
         // DB'deki eski izin formatında eksik key'ler olabilir; merge ile tamamla
         perms = {..._basePerms, ...parsed};
       } else {
         final isPriv = role == 'owner' || role == 'manager';
-        perms = {..._basePerms, 'products': isPriv, 'history': isPriv, 'reports': isPriv, 'labels': isPriv, 'settings': isPriv, 'converter': isPriv, 'movements': isPriv, 'clients': isPriv, 'pos': true};
+        perms = {..._basePerms, 'products': isPriv, 'history': isPriv, 'reports': isPriv, 'labels': isPriv, 'settings': isPriv, 'converter': isPriv, 'movements': isPriv, 'clients': isPriv, 'modules': isPriv, 'pos': true};
       }
     } catch (_) {
       perms = Map.of(_basePerms);
@@ -256,9 +263,10 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDState) => AlertDialog(
+          backgroundColor: AppTheme.panelBackground,
           title: Text('Kullanıcı Düzenle: ${user['staff_id']}'),
           content: SizedBox(
-            width: context.dialogWidth(400),
+            width: ctx.dialogWidth(400),
             child: SingleChildScrollView(child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -294,7 +302,7 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
                       }
                     } else {
                       // 'staff': varsayılan personel izinlerine sıfırla
-                      perms = {'pos': true, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false};
+                      perms = {'pos': true, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false, 'modules': false};
                     }
                   }),
                 ),
@@ -396,14 +404,15 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
 
   void _showAddRoleDialog() {
     final nameCtrl = TextEditingController();
-    Map<String, bool> perms = {'pos': true, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false};
+    Map<String, bool> perms = {'pos': true, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false, 'modules': false};
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDState) => AlertDialog(
+          backgroundColor: AppTheme.panelBackground,
           title: const Text('Yeni Rol'),
           content: SizedBox(
-            width: context.dialogWidth(400),
+            width: ctx.dialogWidth(400),
             child: SingleChildScrollView(child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -445,19 +454,31 @@ class _UsersRolesTabState extends ConsumerState<UsersRolesTab> {
 
   void _showEditRoleDialog(Map<String, dynamic> role) {
     final nameCtrl = TextEditingController(text: role['name']?.toString() ?? '');
+    // Tüm izin anahtarlarının başlangıç değerleri (eksik/bozuk veri için tam güvenli varsayılan)
+    const basePerms = {'pos': true, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false, 'converter': false, 'movements': false, 'clients': false, 'modules': false};
     Map<String, bool> perms;
     try {
-      perms = (json.decode(role['permissions']?.toString() ?? '{}') as Map<String, dynamic>).map((k, v) => MapEntry(k, v == true));
+      final raw = role['permissions'];
+      final Map<String, dynamic> decoded;
+      if (raw is Map) {
+        // Sunucudan zaten decode edilmiş bir Map gelmiş olabilir (String beklemek yerine doğrudan ele al)
+        decoded = Map<String, dynamic>.from(raw);
+      } else {
+        final str = raw?.toString() ?? '{}';
+        decoded = str.isEmpty ? {} : (json.decode(str) as Map<String, dynamic>);
+      }
+      perms = {...basePerms, ...decoded.map((k, v) => MapEntry(k, v == true))};
     } catch (_) {
-      perms = {'pos': true, 'products': false, 'history': false, 'reports': false, 'labels': false, 'settings': false};
+      perms = Map.of(basePerms);
     }
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDState) => AlertDialog(
+          backgroundColor: AppTheme.panelBackground,
           title: Text('Rol Düzenle: ${role['name']}'),
           content: SizedBox(
-            width: context.dialogWidth(400),
+            width: ctx.dialogWidth(400),
             child: SingleChildScrollView(child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
