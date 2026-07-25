@@ -46,4 +46,4 @@ Chrome Web Store'da olmadığı için **otomatik güncelleme yoktur**. Yeni bir 
 
 - Eklentinin ürün eşleştirme mantığı, luca.com.tr'nin kendi ürün arama önerilerine (typeahead) dayanır — sitenin kendi kataloğunda olmayan bir ürün adı için öneri çıkmaz, o satır otomatik olarak "eşleşmedi" işaretlenip bir sonraki satıra geçilir.
 - KDV oranı sitede sadece `0, 1, 8, 10, 18, 20` değerlerini kabul ediyor; ürününüzün KDV oranı bu listede yoksa en yakın değere yuvarlanır ve panelde uyarı olarak gösterilir.
-- İlk sürümde (v0.2.3) bazı DOM seçicileri (özellikle 2. ve sonraki satırların alan id'leri, öneri listesinin CSS seçicisi) canlı sayfa üzerinde tam doğrulanamadan yazıldı — bazı satırlarda beklenmeyen davranış görülürse lütfen bildirin, bir sonraki sürümde düzeltilecektir.
+- İlk sürümde (v0.2.2) bazı DOM seçicileri (özellikle 2. ve sonraki satırların alan id'leri, öneri listesinin CSS seçicisi) canlı sayfa üzerinde tam doğrulanamadan yazıldı — bazı satırlarda beklenmeyen davranış görülürse lütfen bildirin, bir sonraki sürümde düzeltilecektir.

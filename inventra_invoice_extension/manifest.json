@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Inventra Fatura Asistanı",
-  "version": "0.2.3",
+  "version": "0.2.2",
   "description": "Inventra'da hazırlanan fatura listesini turmobefatura.luca.com.tr'ye otomatik doldurur.",
   "icons": {
     "16": "icons/icon16.png",

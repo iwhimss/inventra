@@ -3,8 +3,6 @@ const serverUrlEl = document.getElementById('serverUrl');
 const pairBtn = document.getElementById('pairBtn');
 const resetBtn = document.getElementById('resetBtn');
 
-let pollTimer = null;
-
 function setStatus(kind, text) {
   statusEl.className = kind;
   statusEl.textContent = text;
@@ -14,44 +12,44 @@ function normalizeUrl(url) {
   return url.trim().replace(/\/+$/, '');
 }
 
+function hasValidProtocol(url) {
+  return /^https?:\/\//i.test(url);
+}
+
 async function loadState() {
   const { serverUrl, deviceId, apiKey } = await chrome.storage.local.get(['serverUrl', 'deviceId', 'apiKey']);
   if (serverUrl) serverUrlEl.value = serverUrl;
+
   if (apiKey) {
     setStatus('ok', 'Bağlandı ✓ — eklenti sunucuya eşleştirilmiş.');
-  } else if (deviceId && serverUrl) {
-    setStatus('pending', 'Onay bekleniyor — Inventra yönetici panelinden cihazı onaylayın.');
-    startPolling(serverUrl, deviceId);
-  } else {
-    setStatus('none', 'Sunucuyla eşleştirilmedi.');
+    return;
   }
+
+  if (deviceId && serverUrl) {
+    setStatus(
+      'pending',
+      'Onay bekleniyor — Inventra yönetici panelinden cihazı onaylayın. Bu pencereyi kapatabilirsiniz, arkaplanda otomatik kontrol ediliyor (en geç ~1 dakika içinde bağlanır).',
+    );
+    // Popup açılır açılmaz taze bir kontrol iste — arkaplan alarmının bir
+    // sonraki tetiklenmesini beklemek yerine anında sonucu görebilmek için.
+    chrome.runtime.sendMessage({ type: 'inventra:check-now' }, async () => {
+      const fresh = await chrome.storage.local.get('apiKey');
+      if (fresh.apiKey) setStatus('ok', 'Bağlandı ✓ — eklenti sunucuya eşleştirilmiş.');
+    });
+    return;
+  }
+
+  setStatus('none', 'Sunucuyla eşleştirilmedi.');
 }
 
 async function requestHostPermission(serverUrl) {
   try {
     const origin = new URL(serverUrl).origin + '/*';
     const granted = await chrome.permissions.request({ origins: [origin] });
-    return granted;
-  } catch (_) {
-    return false;
+    return { granted };
+  } catch (e) {
+    return { granted: false, error: String(e) };
   }
-}
-
-function startPolling(serverUrl, deviceId) {
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(async () => {
-    try {
-      const resp = await fetch(`${serverUrl}/api/pair/status/${deviceId}`);
-      const json = await resp.json();
-      if (json.status === 'approved' && json.api_key) {
-        clearInterval(pollTimer);
-        await chrome.storage.local.set({ apiKey: json.api_key });
-        setStatus('ok', 'Bağlandı ✓ — eklenti sunucuya eşleştirilmiş.');
-      }
-    } catch (_) {
-      // sunucuya geçici olarak ulaşılamıyor olabilir, sessizce tekrar dene
-    }
-  }, 3000);
 }
 
 pairBtn.addEventListener('click', async () => {
@@ -60,19 +58,29 @@ pairBtn.addEventListener('click', async () => {
     setStatus('pending', 'Önce sunucu adresini girin.');
     return;
   }
+  if (!hasValidProtocol(serverUrl)) {
+    setStatus(
+      'pending',
+      "Adresin başına http:// veya https:// eklemeniz gerekiyor (VDS/domain için genelde https://, yerel ağ IP'si için genelde http://).",
+    );
+    return;
+  }
 
   pairBtn.disabled = true;
   try {
-    const granted = await requestHostPermission(serverUrl);
+    const { granted, error } = await requestHostPermission(serverUrl);
     if (!granted) {
-      setStatus('pending', 'Sunucu adresine erişim izni verilmedi.');
+      setStatus(
+        'pending',
+        error
+          ? `İzin isteği başarısız: ${error}`
+          : 'Tarayıcı erişim izni vermedi. Adresin doğru yazıldığından emin olup tekrar deneyin.',
+      );
       return;
     }
 
     let { deviceId } = await chrome.storage.local.get('deviceId');
-    if (!deviceId) {
-      deviceId = crypto.randomUUID();
-    }
+    if (!deviceId) deviceId = crypto.randomUUID();
 
     const resp = await fetch(`${serverUrl}/api/pair/request`, {
       method: 'POST',
@@ -91,8 +99,10 @@ pairBtn.addEventListener('click', async () => {
       await chrome.storage.local.set({ apiKey: json.api_key });
       setStatus('ok', 'Bağlandı ✓ — eklenti sunucuya eşleştirilmiş.');
     } else {
-      setStatus('pending', 'Onay bekleniyor — Inventra yönetici panelinden cihazı onaylayın.');
-      startPolling(serverUrl, deviceId);
+      setStatus(
+        'pending',
+        'Onay bekleniyor — Inventra yönetici panelinden cihazı onaylayın. Bu pencereyi kapatabilirsiniz, arkaplanda otomatik kontrol edilecek.',
+      );
     }
   } catch (e) {
     setStatus('pending', `Sunucuya bağlanılamadı: ${e}`);
@@ -102,9 +112,9 @@ pairBtn.addEventListener('click', async () => {
 });
 
 resetBtn.addEventListener('click', async () => {
-  if (pollTimer) clearInterval(pollTimer);
   await chrome.storage.local.remove(['serverUrl', 'deviceId', 'apiKey']);
   serverUrlEl.value = '';
+  chrome.action.setBadgeText({ text: '' });
   setStatus('none', 'Sunucuyla eşleştirilmedi.');
 });
 

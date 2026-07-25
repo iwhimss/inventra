@@ -260,6 +260,13 @@ class AdminHandler {
 
   // ─── Devices ──────────────────────────────────────────────
 
+  String _deviceTypeLabel(dynamic type) {
+    final t = type?.toString() ?? '';
+    if (t == 'browser_extension') return '🧩 Tarayıcı Eklentisi';
+    if (t.isEmpty || t == 'unknown') return 'Bilinmeyen';
+    return _esc(t);
+  }
+
   Response _devicesPage(Request request) {
     if (!_isAuthenticated(request)) return _redirect('/admin/login');
 
@@ -272,7 +279,7 @@ class AdminHandler {
           <div class="device-card pending">
             <div class="device-info">
               <strong>${_esc(d['device_name'])}</strong>
-              <span class="device-type">${_esc(d['device_type'])}</span>
+              <span class="device-type">${_deviceTypeLabel(d['device_type'])}</span>
               <span class="device-id">${_esc(d['device_id'])}</span>
               <span class="device-date">${_esc(d['created_at'])}</span>
             </div>
@@ -301,7 +308,7 @@ class AdminHandler {
                     style="margin:0;font-size:13px;padding:6px 8px;max-width:160px" onchange="this.form.submit()">
                 </form>
               </td>
-              <td>${_esc(d['device_type'])}</td>
+              <td>${_deviceTypeLabel(d['device_type'])}</td>
               <td class="mono">${_esc(d['device_id']?.toString().substring(0, 8) ?? '')}</td>
               <td>${_esc(d['created_at']?.toString().substring(0, 10) ?? '')}</td>
               <td>

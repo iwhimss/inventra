@@ -60,6 +60,7 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
   final TextEditingController _targetCtrl = TextEditingController();
   final List<_InvoiceLine> _lines = [];
   bool _extensionConnected = false;
+  String? _extensionDeviceName;
   Timer? _extensionStatusTimer;
 
   @override
@@ -85,7 +86,13 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
       final resp = await ApiClient.instance.get('/api/invoice-export/extension-status');
       if (!mounted) return;
       final connected = resp.success && resp.data?['connected'] == true;
-      if (connected != _extensionConnected) setState(() => _extensionConnected = connected);
+      final deviceName = connected ? (resp.data?['device_name'] as String?) : null;
+      if (connected != _extensionConnected || deviceName != _extensionDeviceName) {
+        setState(() {
+          _extensionConnected = connected;
+          _extensionDeviceName = deviceName;
+        });
+      }
     } catch (_) {
       // sessizce yoksay — bir sonraki periyodik kontrolde tekrar denenecek
     }
@@ -285,23 +292,28 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
                       Text('TOPLAM', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, letterSpacing: 1)),
                       Text('${_total.toStringAsFixed(2)} ₺', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
                       const SizedBox(height: 4),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 7,
-                            height: 7,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: _extensionConnected ? AppTheme.secondaryAccent : AppTheme.textMuted,
+                      Tooltip(
+                        message: _extensionConnected
+                            ? 'Bağlı cihaz: ${_extensionDeviceName ?? 'bilinmiyor'}'
+                            : 'Tarayıcı eklentisinden hiç bağlantı sinyali alınamadı',
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _extensionConnected ? AppTheme.secondaryAccent : AppTheme.textMuted,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            _extensionConnected ? 'Eklenti Bağlı' : 'Eklenti Bulunamadı',
-                            style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
-                          ),
-                        ],
+                            const SizedBox(width: 5),
+                            Text(
+                              _extensionConnected ? 'Eklenti Bağlı' : 'Eklenti Bulunamadı',
+                              style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),

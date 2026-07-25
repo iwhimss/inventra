@@ -1726,15 +1726,22 @@ class CoreServer {
   Response _handleInvoiceExportExtensionStatus(Request request) {
     try {
       final rows = _db.query(
-        "SELECT last_sync_at FROM paired_devices WHERE device_type = 'browser_extension' AND status = 'approved' AND last_sync_at IS NOT NULL ORDER BY last_sync_at DESC LIMIT 1",
+        "SELECT device_id, device_name, last_sync_at FROM paired_devices WHERE device_type = 'browser_extension' AND status = 'approved' AND last_sync_at IS NOT NULL ORDER BY last_sync_at DESC LIMIT 1",
       );
       if (rows.isEmpty) {
         return _jsonOk({'success': true, 'connected': false});
       }
-      final lastSeenStr = rows.first['last_sync_at'] as String;
+      final row = rows.first;
+      final lastSeenStr = row['last_sync_at'] as String;
       final lastSeen = DateTime.tryParse(lastSeenStr);
       final connected = lastSeen != null && DateTime.now().difference(lastSeen).inSeconds < 90;
-      return _jsonOk({'success': true, 'connected': connected, 'last_seen': lastSeenStr});
+      return _jsonOk({
+        'success': true,
+        'connected': connected,
+        'last_seen': lastSeenStr,
+        'device_name': row['device_name'],
+        'device_id': row['device_id'],
+      });
     } catch (e) {
       return _jsonError(e.toString());
     }
