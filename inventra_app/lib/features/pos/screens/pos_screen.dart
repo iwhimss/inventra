@@ -1,6 +1,7 @@
 ﻿import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:inventra_app/core/widgets/stock_import_status_badge.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -792,7 +793,10 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
           height: 50,
           color: AppTheme.panelBackground,
           child: Row(
-            children: List.generate(5, (index) {
+            children: [
+              Expanded(
+                child: Row(
+                  children: List.generate(5, (index) {
               final isSelected = cartState.activeTab == index;
               final itemCount = cartState.carts[index].length;
               return Expanded(
@@ -826,10 +830,17 @@ class _PosScreenState extends ConsumerState<PosScreen> with SingleTickerProvider
                   ),
                 ),
               );
-            }),
+                  }),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8),
+                child: StockImportStatusBadge(),
+              ),
+            ],
           ),
         ),
-        
+
         // Cart Items
         Expanded(
           child: cartNotifier.currentCart.isEmpty

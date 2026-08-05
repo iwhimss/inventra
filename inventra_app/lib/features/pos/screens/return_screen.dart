@@ -120,6 +120,18 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
       appBar: AppBar(
         title: Text(_isFromSale ? 'İade Al — Satış #${widget.sale!['id'].toString().substring(0, 8)}' : 'İade Al'),
         backgroundColor: AppTheme.panelBackground,
+        actions: [
+          if (_isFromSale && _lines.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.select_all),
+              tooltip: 'Tümünü Seç',
+              onPressed: () => setState(() {
+                for (final l in _lines) {
+                  l.quantity = l.maxQty ?? l.quantity;
+                }
+              }),
+            ),
+        ],
       ),
       body: Column(
         children: [

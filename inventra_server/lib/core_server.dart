@@ -1132,16 +1132,43 @@ class CoreServer {
     }
   }
 
+  /// Satışı iptal eder (siler) ve stoğu geri ekler. Rapor/analiz sorguları
+  /// doğrudan `sales` tablosundan hesaplandığı için silme, satışın raporlarda
+  /// "hiç yapılmamış gibi" görünmesini otomatik sağlar. Stok iadesinde, bu
+  /// satıştan daha önce (kısmi) iade edilmiş miktar düşülür — aksi halde
+  /// önce iade alınmış bir ürün, satış da iptal edilince stoğa ÇİFT
+  /// eklenmiş olurdu.
   Future<Response> _handleDeleteSale(Request request, String id) async {
     try {
       final saleRows = _db.query('SELECT total_amount, cashier_name FROM sales WHERE id = ?', [id]);
+      final items = _db.query('SELECT product_id, quantity FROM sale_items WHERE sale_id = ?', [id]);
+
+      for (final item in items) {
+        final productId = item['product_id']?.toString();
+        if (productId == null || productId.isEmpty) continue;
+        final soldQty = (item['quantity'] as num?)?.toDouble() ?? 0;
+
+        final returnedRows = _db.query('''
+          SELECT COALESCE(SUM(ri.quantity), 0) as total
+          FROM return_items ri
+          JOIN returns r ON r.id = ri.return_id
+          WHERE r.sale_id = ? AND ri.product_id = ?
+        ''', [id, productId]);
+        final alreadyReturned = (returnedRows.first['total'] as num?)?.toDouble() ?? 0;
+
+        final restoreQty = (soldQty - alreadyReturned).clamp(0, double.infinity);
+        if (restoreQty > 0) {
+          _db.execute('UPDATE products SET stock = stock + ? WHERE id = ?', [restoreQty, productId]);
+        }
+      }
+
       _db.delete('sale_items', where: 'sale_id = ?', whereArgs: [id]);
       final count = _db.delete('sales', where: 'id = ?', whereArgs: [id]);
       if (saleRows.isNotEmpty) {
         final cashier = saleRows.first['cashier_name']?.toString() ?? '';
         final total = saleRows.first['total_amount'] ?? 0;
         _logActivity('Satış', 'sale_delete',
-            'Satış silindi. Tutar: ₺$total',
+            'Satış iptal edildi (stok iade edildi). Tutar: ₺$total',
             userName: cashier.isNotEmpty ? cashier : null);
       }
       return _jsonOk({'success': true, 'deleted': count});

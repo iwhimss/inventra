@@ -186,6 +186,14 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Kapat')),
+          TextButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _confirmCancelSale(sale);
+            },
+            icon: Icon(Icons.delete_forever, size: 16, color: AppTheme.dangerAccent),
+            label: Text('Satışı İptal Et', style: TextStyle(color: AppTheme.dangerAccent)),
+          ),
           if (returnedAmount < totalAmount)
             OutlinedButton.icon(
               onPressed: () async {
@@ -235,6 +243,52 @@ class _SalesHistoryScreenState extends ConsumerState<SalesHistoryScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmCancelSale(Map<String, dynamic> sale) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.panelBackground,
+        title: const Text('Satışı İptal Et'),
+        content: const Text(
+          'Bu satış tamamen iptal edilecek: stok geri eklenecek ve raporlarda hiç yapılmamış gibi görünecek. '
+          'Bu işlem geri alınamaz. Emin misiniz?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Vazgeç', style: TextStyle(color: AppTheme.textMuted))),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.dangerAccent),
+            child: const Text('İPTAL ET'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      final resp = await ApiClient.instance.delete('/api/sales/${sale['id']}');
+      if (!mounted) return;
+      if (resp.success) {
+        SoundService.playSuccess();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: const Text('Satış iptal edildi, stok geri eklendi.'), backgroundColor: AppTheme.secondaryAccent),
+        );
+        ref.read(salesHistoryProvider.notifier).loadSales();
+      } else {
+        SoundService.playError();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(resp.error ?? 'Satış iptal edilemedi'), backgroundColor: AppTheme.dangerAccent),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Hata: $e'), backgroundColor: AppTheme.dangerAccent),
+        );
+      }
+    }
   }
 
   void _showReturnDetails(Map<String, dynamic> ret) {

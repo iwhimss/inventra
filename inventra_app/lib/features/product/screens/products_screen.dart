@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:inventra_app/core/widgets/barcode_scanner_page.dart';
+import 'package:inventra_app/core/widgets/stock_import_status_badge.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:inventra_app/core/models/product.dart';
 import 'package:inventra_app/features/backup/services/excel_service.dart';
@@ -416,7 +417,13 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Ürün Yönetimi', style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 20)),
+                    Row(
+                      children: [
+                        Text('Ürün Yönetimi', style: Theme.of(context).textTheme.displayLarge?.copyWith(fontSize: 20)),
+                        const SizedBox(width: 8),
+                        const StockImportStatusBadge(),
+                      ],
+                    ),
                     const SizedBox(height: 8),
                     TabBar(
                       controller: _tabController,
@@ -475,7 +482,9 @@ class _ProductsScreenState extends ConsumerState<ProductsScreen>
               return Row(
                 children: [
                   Text('Ürün Yönetimi', style: Theme.of(context).textTheme.displayLarge),
-                  const SizedBox(width: 24),
+                  const SizedBox(width: 8),
+                  const StockImportStatusBadge(),
+                  const SizedBox(width: 16),
                   Flexible(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 400),

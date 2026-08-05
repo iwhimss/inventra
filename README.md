@@ -7,9 +7,11 @@
 ## Özellikler
 
 - **Stok Yönetimi** — Ürün ekleme, düzenleme, kategori ve birim desteği, ondalık miktar/stok takibi, raf konumu takibi (Excel yedeğine ve dönüştürücüye dahil)
+- **Otomatik Stok İçe Aktarma** — Başka bir programın (ör. SahraSoft) periyodik olarak yazdığı bir stok CSV dosyasını izler, sütun eşleştirmesine göre otomatik olarak Inventra'ya aktarır (bkz. [docs/stock-auto-import.md](docs/stock-auto-import.md))
 - **Çoklu Barkod** — Bir ürüne birden fazla barkod (alias) tanımlama; tedarikçi barkodu değişse de ürün kaybolmaz
 - **POS Ekranı** — Hızlı satış, sepet, barkod okuma desteği, fiyat teklifi PDF'i, kümülatif indirim listesi (% ve ₺ üst üste eklenebilir/tek tek kaldırılabilir), toplamı en yakın 10'a yuvarlama
-- **İade Alma** — Geçmiş bir satıştan (tam/kısmi) veya bağımsız olarak ürün iadesi, nakit/kart iade yöntemi seçimi, stok otomatik geri eklenir
+- **İade Alma** — Geçmiş bir satıştan (tam/kısmi, "Tümünü Seç" ile hızlı toplu seçim) veya bağımsız olarak ürün iadesi, nakit/kart iade yöntemi seçimi, stok otomatik geri eklenir
+- **Satış İptali** — Geçmiş İşlemler'den yanlışlıkla onaylanan bir satış tamamen iptal edilebilir; stok geri eklenir (zaten iade edilmiş kısım hariç) ve raporlarda hiç yapılmamış gibi görünür
 - **Müşteri & Tedarikçi** — Cari hesap takibi; POS'ta satışa isteğe bağlı müşteri ismi ekleme ve Geçmiş İşlemler'de isimle arama
 - **Kasa Yönetimi** — Açılış/kapanış, günlük rapor
 - **Raporlar & Analitik** — Satış/nakit/kart/veresiye/indirim/iade grafikleri, gün seçimi, özel tarih aralığı
@@ -189,6 +191,7 @@ inventra/
 │   ├── vds-deployment.md     # VDS + Docker kurulum kılavuzu
 │   ├── release-process.md    # GitHub Release asset adlandırma kuralı (otomatik güncelleme için)
 │   ├── invoice-extension.md  # Fatura eklentisi kurulum/eşleştirme kılavuzu
+│   ├── stock-auto-import.md  # Otomatik stok CSV içe aktarma kılavuzu
 │   └── project-overview.md   # Proje mimarisi detaylı özet
 ├── .plan/                    # Geliştirme planları (versiyon bazlı)
 └── README.md

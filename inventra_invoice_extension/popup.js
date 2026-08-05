@@ -1,7 +1,7 @@
 const contentEl = document.getElementById('content');
 document.getElementById('settings-link').addEventListener('click', () => chrome.runtime.openOptionsPage());
 
-const TARGET_URL_PATTERN = /^https:\/\/turmobefatura\.luca\.com\.tr\/Invoice\/Create/i;
+const TARGET_URL_PATTERN = /^https:\/\/turmobefatura\.luca\.com\.tr\/Invoice\/(Create|Edit)/i;
 
 let pollTimer = null;
 let activeTabId = null;

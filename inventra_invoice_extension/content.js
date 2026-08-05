@@ -154,13 +154,26 @@ async function fillRow(index, line) {
   return { status: 'ok', warnings };
 }
 
+// Sayfada zaten kaç ürün satırı olduğunu tespit eder — UrunAdi0, UrunAdi1, ...
+// id'lerini sırayla arayıp ilk bulunamayanın index'ini döner. Bu, aynı
+// sayfaya (veya taslak faturayı düzenlerken) ikinci kez "Doldur" çalıştırınca
+// zaten dolu olan satırlar için gereksiz yere "Yeni Satır Ekle" tıklanmasını
+// (ve bunun sonucunda alan index'lerinin kaymasını) önler.
+function countExistingRows() {
+  let count = 0;
+  while (byId(fieldId('UrunAdi', count))) count++;
+  return count;
+}
+
 async function runFill(lines) {
   state.running = true;
   state.stopped = false;
   state.paused = false;
   state.lines = lines;
   state.results = lines.map((l) => ({ name: l.name, status: 'pending' }));
-  log(`Doldurma başlıyor — ${lines.length} satır.`);
+
+  const existingRowCount = countExistingRows();
+  log(`Doldurma başlıyor — ${lines.length} satır. Sayfada zaten ${existingRowCount} satır var, ${Math.max(0, lines.length - existingRowCount)} yeni satır eklenecek.`);
 
   for (let i = 0; i < state.lines.length; i++) {
     if (state.stopped) {
@@ -173,7 +186,9 @@ async function runFill(lines) {
       break;
     }
 
-    if (i > 0) await addNewRow();
+    // Sadece sayfada henüz var olmayan satırlar için "Yeni Satır Ekle" tıkla —
+    // mevcut satırlar (0..existingRowCount-1) doğrudan üzerine yazılarak güncellenir.
+    if (i >= existingRowCount) await addNewRow();
 
     try {
       const result = await fillRow(i, state.lines[i]);

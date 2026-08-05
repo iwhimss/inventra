@@ -590,7 +590,8 @@ class _SyncSettingsTabState extends ConsumerState<SyncSettingsTab> {
                                     ],
                                   ),
                                   subtitle: Text(
-                                    d['last_sync_at'] != null ? 'Son onay/senk: ${d['last_sync_at']}' : 'Onay durumu: aktif',
+                                    'ID: ${d['device_id']?.toString().substring(0, 8) ?? '?'}'
+                                    '${d['last_sync_at'] != null ? ' • Son onay/senk: ${d['last_sync_at']}' : ' • Onay durumu: aktif'}',
                                     style: TextStyle(fontSize: 11, color: AppTheme.textMuted),
                                   ),
                                   trailing: isCurrentDevice

@@ -13,7 +13,9 @@ Inventra masaüstü/mobil uygulaması bir web sayfası olmadığı için tarayı
 3. **Kabul Et**'e basılınca liste sunucudan çekilir ve popup "Doldur" ilerleme ekranına geçer; `turmobefatura.luca.com.tr` fatura oluşturma sayfası o an açık ve aktifse doldurma otomatik başlar.
 4. Eklenti periyodik olarak sunucuya "heartbeat" gönderir; Inventra uygulaması bu sayede her eşleştirilmiş cihazın bağlı olup olmadığını gösterebilir.
 
-**Not:** Popup, sadece `turmobefatura.luca.com.tr/Invoice/Create` sayfası aktif sekmedeyken doldurma kontrollerini gösterir — başka bir sayfadaysanız önce o sekmeye geçmeniz gerekir.
+**Not:** Popup, hem fatura oluşturma (`/Invoice/Create`) hem de taslak/mevcut bir faturayı düzenleme (`/Invoice/Edit?InvoiceId=...`) sayfası aktif sekmedeyken doldurma kontrollerini gösterir — başka bir sayfadaysanız önce o sekmeye geçmeniz gerekir.
+
+**Yeniden aktarım / güncelleme:** Aynı sayfada (ya da bir taslağı düzenlerken) daha önce doldurulmuş satırlar varsa, eklenti onları tekrar "Yeni Satır Ekle" ile çoğaltmaz — sayfada zaten kaç satır olduğunu tespit edip sadece gerçekten yeni eklediğiniz ürünler için yeni satır açar, mevcut satırları ise (miktar/fiyat değişikliği varsa dahil) üzerine yazarak günceller.
 
 ## Kurulum
 
@@ -61,3 +63,4 @@ Chrome Web Store'da olmadığı için **otomatik güncelleme yoktur**. Yeni bir 
 - Ürün Adı alanı, sitenin kendi ürün kataloğunu kullanıyorsanız normalde bir öneri/otomatik-tamamlama listesi gösterir — ama eklenti bu listeyi hiç beklemez veya tıklamaz, adı doğrudan serbest metin olarak yazar (kataloğa bağlı olmayan, elle giriş yapılan kullanım şekliyle uyumlu). Kataloğu aktif kullanıyorsanız ürünün otomatik seçilmesi gerekiyorsa bu, eklentinin şu anki kapsamı dışındadır.
 - KDV oranı sitede sadece `0, 1, 8, 10, 18, 20` değerlerini kabul ediyor; ürününüzün KDV oranı bu listede yoksa en yakın değere yuvarlanır ve popup'ta uyarı olarak gösterilir.
 - Satır indeksleme kuralı (`#Miktar1`, `#Miktar2`... — 2. ve sonraki satırların alan id'leri) canlı sayfada tam doğrulanmadan yazıldı; bir satır "bulunamadı" olarak işaretlenirse (özellikle 2+ satırlarda) yukarıdaki konsol log yöntemiyle bildirin.
+- `/Invoice/Edit?InvoiceId=...` sayfasının DOM yapısının `/Invoice/Create` ile birebir aynı alan id'lerini kullandığı varsayılıyor (aynı site, aynı ürün satırı bileşeni) ama bu canlı olarak doğrulanmadı — sorun yaşarsanız konsol log'larını paylaşın.

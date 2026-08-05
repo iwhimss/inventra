@@ -7,6 +7,7 @@ import 'package:inventra_app/core/theme/app_theme.dart';
 import 'package:inventra_app/core/theme/theme_provider.dart';
 import 'package:inventra_app/core/services/sound_service.dart';
 import 'package:inventra_app/core/services/auto_backup_service.dart';
+import 'package:inventra_app/core/services/stock_import_service.dart';
 import 'package:inventra_app/core/services/cart_transfer_service.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -93,6 +94,7 @@ void main() async {
   await DatabaseHelper.instance.globalDb;
   await SoundService.init();
   await AutoBackupService.init();
+  await StockImportService.init();
   
   runApp(
     const ProviderScope(

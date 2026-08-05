@@ -208,6 +208,29 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
     double diff = target - _total;
     if (diff.abs() < 0.01) return;
 
+    // Değişen satırları (ilk fiyatlarıyla) sırayla topluyoruz — hem özet
+    // dialogu hem de sondaki "cilalama" adımı için kullanılacak.
+    final touchedOrder = <_InvoiceLine>[];
+    final firstOldPrice = <_InvoiceLine, double>{};
+
+    // Fiyatı günceller ve `diff`i, TEORİK uygulanan miktar yerine fiyattaki
+    // GERÇEKLEŞEN (2 ondalığa yuvarlanmış) değişiklik kadar azaltır — bu,
+    // yüksek miktarlı satırlarda kuruş yuvarlamasının toplamda birkaç TL'lik
+    // sapmaya dönüşmesini (bildirilen bug) önler.
+    void applyToLine(_InvoiceLine line, double newPrice) {
+      final qty = line.quantity <= 0 ? 1 : line.quantity;
+      final oldPrice = line.grossUnitPrice;
+      line.grossUnitPrice = newPrice;
+      final actualChange = (line.grossUnitPrice - oldPrice) * qty;
+      diff -= actualChange;
+      if (line.grossUnitPrice != oldPrice) {
+        if (!touchedOrder.contains(line)) {
+          touchedOrder.add(line);
+          firstOldPrice[line] = oldPrice;
+        }
+      }
+    }
+
     final sorted = List<_InvoiceLine>.from(candidates)..sort((a, b) => a.lineTotal.compareTo(b.lineTotal));
     for (final line in sorted) {
       if (diff.abs() < 0.01) break;
@@ -218,19 +241,74 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
         final maxDown = (line.grossUnitPrice - floor) * qty;
         if (maxDown <= 0) continue;
         final apply = diff.abs() <= maxDown ? diff.abs() : maxDown;
-        line.grossUnitPrice = line.grossUnitPrice - (apply / qty);
-        diff += apply;
+        applyToLine(line, line.grossUnitPrice - (apply / qty));
       } else {
         // Toplamı artırmamız gerekiyor — orijinal fiyatın %150'sinin üstüne çıkılmayacak
         final ceil = line.originalGrossPrice * 1.5;
         final maxUp = (ceil - line.grossUnitPrice) * qty;
         if (maxUp <= 0) continue;
         final apply = diff <= maxUp ? diff : maxUp;
-        line.grossUnitPrice = line.grossUnitPrice + (apply / qty);
-        diff -= apply;
+        applyToLine(line, line.grossUnitPrice + (apply / qty));
       }
     }
+
+    // Cilalama: birikmiş kuruş yuvarlamaları yüzünden hâlâ küçük bir fark
+    // kaldıysa, en son değiştirdiğimiz satıra (yine %50-%150 sınırı içinde)
+    // uygulayıp tam hedefe ulaşmaya çalışıyoruz.
+    if (diff.abs() >= 0.01 && touchedOrder.isNotEmpty) {
+      final polishLine = touchedOrder.last;
+      final qty = polishLine.quantity <= 0 ? 1 : polishLine.quantity;
+      final floor = polishLine.originalGrossPrice * 0.5;
+      final ceil = polishLine.originalGrossPrice * 1.5;
+      final proposed = (polishLine.grossUnitPrice + (diff / qty)).clamp(floor, ceil);
+      applyToLine(polishLine, proposed);
+    }
+
     setState(() {});
+
+    final changes = touchedOrder
+        .map((l) => (line: l, oldPrice: firstOldPrice[l]!, newPrice: l.grossUnitPrice))
+        .where((c) => (c.newPrice - c.oldPrice).abs() >= 0.005)
+        .toList();
+    if (changes.isNotEmpty) _showPriceChangeSummary(changes);
+  }
+
+  void _showPriceChangeSummary(List<({_InvoiceLine line, double oldPrice, double newPrice})> changes) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.panelBackground,
+        title: Text('Fiyat Değişikliği Özeti (${changes.length} ürün)'),
+        content: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: changes.map((c) {
+                final delta = c.newPrice - c.oldPrice;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(c.line.product.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                      Text(
+                        '${c.oldPrice.toStringAsFixed(2)} ₺ → ${c.newPrice.toStringAsFixed(2)} ₺ (${delta > 0 ? '+' : ''}${delta.toStringAsFixed(2)} ₺)',
+                        style: TextStyle(fontSize: 12, color: delta < 0 ? AppTheme.dangerAccent : AppTheme.secondaryAccent),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+        actions: [
+          ElevatedButton(onPressed: () => Navigator.pop(ctx), child: const Text('Tamam')),
+        ],
+      ),
+    );
   }
 
   Future<void> _copyToClipboard() async {
@@ -313,32 +391,35 @@ class _InvoicePrepScreenState extends ConsumerState<InvoicePrepScreen> {
                       if (_extensionDevices.isEmpty)
                         Text('Eşleştirilmiş tarayıcı eklentisi yok', style: TextStyle(color: AppTheme.textMuted, fontSize: 11))
                       else
-                        DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _selectedDeviceId,
-                            isDense: true,
-                            style: TextStyle(color: AppTheme.textMain, fontSize: 12),
-                            items: _extensionDevices
-                                .map((d) => DropdownMenuItem(
-                                      value: d.id,
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Container(
-                                            width: 7,
-                                            height: 7,
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              color: d.connected ? AppTheme.secondaryAccent : AppTheme.textMuted,
+                        SizedBox(
+                          width: isMobile ? 220 : 260,
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: _selectedDeviceId,
+                              isDense: true,
+                              isExpanded: true,
+                              style: TextStyle(color: AppTheme.textMain, fontSize: 12),
+                              items: _extensionDevices
+                                  .map((d) => DropdownMenuItem(
+                                        value: d.id,
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 7,
+                                              height: 7,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: d.connected ? AppTheme.secondaryAccent : AppTheme.textMuted,
+                                              ),
                                             ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Text(d.name, overflow: TextOverflow.ellipsis),
-                                        ],
-                                      ),
-                                    ))
-                                .toList(),
-                            onChanged: (v) => setState(() => _selectedDeviceId = v),
+                                            const SizedBox(width: 6),
+                                            Expanded(child: Text(d.name, overflow: TextOverflow.ellipsis)),
+                                          ],
+                                        ),
+                                      ))
+                                  .toList(),
+                              onChanged: (v) => setState(() => _selectedDeviceId = v),
+                            ),
                           ),
                         ),
                     ],

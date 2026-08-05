@@ -1,5 +1,7 @@
 ﻿import 'package:inventra_app/core/services/notification_service.dart';
+import 'dart:convert';
 import 'dart:io';
+import 'package:csv/csv.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
@@ -7,7 +9,19 @@ import 'package:inventra_app/core/theme/app_theme.dart';
 import 'package:inventra_app/core/theme/theme_provider.dart';
 import 'package:inventra_app/core/database/database_helper.dart';
 import 'package:inventra_app/core/services/sound_service.dart';
+import 'package:inventra_app/core/services/stock_import_service.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+
+const List<MapEntry<String, String>> _kStockImportFields = [
+  MapEntry('name', 'Ürün Adı (Zorunlu)'),
+  MapEntry('sale_price', 'Satış Fiyatı (Zorunlu)'),
+  MapEntry('barcode', 'Barkod'),
+  MapEntry('stock', 'Stok Miktarı'),
+  MapEntry('purchase_price', 'Alış Fiyatı'),
+  MapEntry('vat_rate', 'KDV Oranı'),
+  MapEntry('unit', 'Birim'),
+  MapEntry('product_group', 'Ürün Grubu'),
+];
 
 class AppSettingsTab extends ConsumerStatefulWidget {
   const AppSettingsTab({super.key});
@@ -43,6 +57,13 @@ class _AppSettingsTabState extends ConsumerState<AppSettingsTab> {
   bool _isLoading = true;
   String _appVersion = 'v0.0.1';
 
+  // Otomatik stok içe aktarma (SahraSoft vb.)
+  String? _stockCsvPath;
+  List<String> _stockCsvHeaders = [];
+  bool _stockImportEnabled = false;
+  final _stockImportIntervalCtrl = TextEditingController(text: '5');
+  final Map<String, String?> _stockFieldMapping = {};
+
   @override
   void initState() {
     super.initState();
@@ -56,6 +77,7 @@ class _AppSettingsTabState extends ConsumerState<AppSettingsTab> {
     _autoBackupTemplatesMinCtrl.dispose();
     _autoBackupExcelMinCtrl.dispose();
     _autoBackupClientsMinCtrl.dispose();
+    _stockImportIntervalCtrl.dispose();
     super.dispose();
   }
 
@@ -88,10 +110,77 @@ class _AppSettingsTabState extends ConsumerState<AppSettingsTab> {
           case 'auto_backup_templates_min': _autoBackupTemplatesMinCtrl.text = v.isEmpty ? '30' : v; break;
           case 'auto_backup_excel_min': _autoBackupExcelMinCtrl.text = v.isEmpty ? '30' : v; break;
           case 'auto_backup_clients_min': _autoBackupClientsMinCtrl.text = v.isEmpty ? '30' : v; break;
+          case 'stock_import_enabled': _stockImportEnabled = v == 'true'; break;
+          case 'stock_import_file_path': _stockCsvPath = v.isEmpty ? null : v; break;
+          case 'stock_import_interval_min': _stockImportIntervalCtrl.text = v.isEmpty ? '5' : v; break;
+          case 'stock_import_mapping':
+            if (v.isNotEmpty) {
+              try {
+                final decoded = Map<String, dynamic>.from(jsonDecode(v) as Map);
+                decoded.forEach((k, val) => _stockFieldMapping[k] = val as String?);
+              } catch (_) {}
+            }
+            break;
         }
+      }
+      if (_stockCsvPath != null) {
+        try {
+          final content = await File(_stockCsvPath!).readAsString();
+          final rows = Csv().decode(content);
+          if (rows.isNotEmpty) {
+            _stockCsvHeaders = rows.first.map((e) => e.toString().trim()).toList();
+          }
+        } catch (_) {}
       }
     } catch (_) {}
     if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _pickStockCsvFile() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['csv']);
+    if (result == null || result.files.single.path == null) return;
+    final path = result.files.single.path!;
+    try {
+      final content = await File(path).readAsString();
+      final rows = Csv().decode(content);
+      if (rows.isEmpty) {
+        if (mounted) NotificationService.showError('CSV dosyası boş veya okunamadı.');
+        return;
+      }
+      final headers = rows.first.map((e) => e.toString().trim()).toList();
+      setState(() {
+        _stockCsvPath = path;
+        _stockCsvHeaders = headers;
+        // Bilinen SahraSoft başlıklarına göre otomatik ön-eşleştirme
+        const autoMap = {
+          'BARKOD': 'barcode', 'ADI': 'name', 'MIKTARI': 'stock',
+          'ALIS': 'purchase_price', 'SATIS': 'sale_price', 'KDV': 'vat_rate',
+          'MIKTARTÜRÜ': 'unit', 'ALAN1': 'product_group',
+        };
+        for (final header in headers) {
+          final field = autoMap[header.toUpperCase()];
+          if (field != null) _stockFieldMapping[field] = header;
+        }
+      });
+    } catch (e) {
+      if (mounted) NotificationService.showError('Dosya okunamadı: $e');
+    }
+  }
+
+  Future<void> _saveStockImportSettings() async {
+    if (_stockImportEnabled && (_stockCsvPath == null || _stockFieldMapping['name'] == null || _stockFieldMapping['sale_price'] == null)) {
+      NotificationService.showError('Aktif etmek için önce dosya seçip Ürün Adı ve Satış Fiyatı eşleştirmesini yapmalısınız.');
+      return;
+    }
+    await _saveSetting('stock_import_enabled', _stockImportEnabled.toString());
+    await _saveSetting('stock_import_file_path', _stockCsvPath ?? '');
+    await _saveSetting('stock_import_interval_min', _stockImportIntervalCtrl.text.trim().isEmpty ? '5' : _stockImportIntervalCtrl.text.trim());
+    await _saveSetting('stock_import_mapping', jsonEncode(_stockFieldMapping));
+    await StockImportService.init();
+    if (mounted) {
+      SoundService.playNotification();
+      NotificationService.showSuccess('Stok içe aktarma ayarları kaydedildi.');
+    }
   }
 
   Future<void> _saveSetting(String key, String value) async {
@@ -320,6 +409,135 @@ class _AppSettingsTabState extends ConsumerState<AppSettingsTab> {
               _autoBackupRow('Şablonlar', _autoBackupTemplates, (v) => setState(() => _autoBackupTemplates = v), _autoBackupTemplatesMinCtrl),
               _autoBackupRow('Excel (Stok)', _autoBackupExcel, (v) => setState(() => _autoBackupExcel = v), _autoBackupExcelMinCtrl),
               _autoBackupRow('Müşteri/Tedarikçi', _autoBackupClients, (v) => setState(() => _autoBackupClients = v), _autoBackupClientsMinCtrl),
+          ]),
+          const SizedBox(height: 16),
+
+          // Otomatik stok içe aktarma
+          _sectionCard('Otomatik Stok İçe Aktarma (SahraSoft vb.)', Icons.sync_alt, [
+            Text(
+              'Başka bir programın periyodik olarak yazdığı bir stok CSV dosyasını izler; dosya değiştiğinde otomatik olarak Inventra\'ya aktarır.',
+              style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _stockCsvPath ?? 'Henüz dosya seçilmedi',
+                    style: TextStyle(fontSize: 13, color: _stockCsvPath != null ? AppTheme.textMain : AppTheme.textMuted),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: _pickStockCsvFile,
+                  icon: const Icon(Icons.file_open, size: 16),
+                  label: const Text('CSV Seç'),
+                ),
+              ],
+            ),
+            if (_stockCsvHeaders.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text('Sütun Eşleştirme', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 8),
+              ..._kStockImportFields.map((entry) {
+                final field = entry.key;
+                final label = entry.value;
+                final isRequired = label.contains('Zorunlu');
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: Row(
+                          children: [
+                            if (isRequired) Text('* ', style: TextStyle(color: AppTheme.dangerAccent, fontWeight: FontWeight.bold)),
+                            Flexible(child: Text(label, style: const TextStyle(fontSize: 12))),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        flex: 4,
+                        child: DropdownButtonFormField<String?>(
+                          initialValue: _stockFieldMapping[field],
+                          isExpanded: true,
+                          decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 6)),
+                          hint: Text('Yok / Boş Bırak', style: TextStyle(fontSize: 12, color: AppTheme.textMuted)),
+                          items: [
+                            const DropdownMenuItem<String?>(value: null, child: Text('Yok / Boş Bırak', style: TextStyle(fontSize: 12))),
+                            ..._stockCsvHeaders.map((h) => DropdownMenuItem<String?>(value: h, child: Text(h, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)))),
+                          ],
+                          onChanged: (v) => setState(() => _stockFieldMapping[field] = v),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 8),
+            ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Switch(value: _stockImportEnabled, onChanged: (v) => setState(() => _stockImportEnabled = v), activeColor: AppTheme.primaryAccent),
+                const SizedBox(width: 8),
+                const Text('Etkin', style: TextStyle(fontSize: 13)),
+                const Spacer(),
+                SizedBox(
+                  width: 70,
+                  child: TextField(
+                    controller: _stockImportIntervalCtrl,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text('dk. kontrol sıklığı', style: TextStyle(fontSize: 12)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ValueListenableBuilder<StockImportStatus>(
+              valueListenable: StockImportService.status,
+              builder: (context, status, _) {
+                return Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.darkBackground,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppTheme.borderBright),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Icon(status.enabled ? Icons.circle : Icons.circle_outlined, size: 10, color: status.enabled ? AppTheme.secondaryAccent : AppTheme.textMuted),
+                        const SizedBox(width: 6),
+                        Text(status.enabled ? 'Aktif' : 'Pasif', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      ]),
+                      if (status.lastImportAt != null) ...[
+                        const SizedBox(height: 4),
+                        Text('Son içe aktarma: ${status.lastImportAt.toString().substring(0, 16)} — ${status.lastAdded} eklendi, ${status.lastUpdated} güncellendi', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                      ],
+                      if (status.lastCheckedAt != null) ...[
+                        const SizedBox(height: 2),
+                        Text('Son kontrol: ${status.lastCheckedAt.toString().substring(0, 16)}', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                      ],
+                      if (status.lastError != null) ...[
+                        const SizedBox(height: 4),
+                        Text('Hata: ${status.lastError}', style: TextStyle(fontSize: 11, color: AppTheme.dangerAccent)),
+                      ],
+                    ],
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(onPressed: _saveStockImportSettings, child: const Text('KAYDET')),
+            ),
           ]),
           const SizedBox(height: 16),
 
