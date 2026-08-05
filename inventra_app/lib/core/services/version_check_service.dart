@@ -142,8 +142,26 @@ class VersionCheckService {
       return;
     }
 
+    final fileName = asset['name'] as String;
+    final expectedSize = asset['size'] as int?;
+
+    // Dosya zaten indirilmişse (aynı ad + aynı boyut) tekrar indirmek yerine
+    // doğrudan "İndirme Tamamlandı" ekranına geçilir — kullanıcı "AÇ"a basınca
+    // kurulumu başlatabilsin diye.
+    try {
+      final dir = await _resolveDownloadDir();
+      final filePath = '${dir.path}${Platform.pathSeparator}$fileName';
+      final existing = File(filePath);
+      if (await existing.exists() && expectedSize != null && await existing.length() == expectedSize) {
+        if (context.mounted) _showDownloadCompleteDialog(context, filePath, dir);
+        return;
+      }
+    } catch (_) {
+      // dosya kontrolünde hata olursa normal indirme akışına devam edilir
+    }
+
     if (context.mounted) {
-      await _downloadAsset(context, asset['name'] as String, asset['browser_download_url'] as String);
+      await _downloadAsset(context, fileName, asset['browser_download_url'] as String);
     }
   }
 
@@ -310,31 +328,7 @@ class VersionCheckService {
 
       closeProgressDialog();
 
-      if (context.mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            backgroundColor: AppTheme.panelBackground,
-            title: const Text('İndirme Tamamlandı'),
-            content: Text(
-              'Güncelleme indirildi:\n\n$filePath',
-            ),
-            actions: [
-              if (Platform.isWindows)
-                TextButton(
-                  onPressed: () => Process.run('explorer', [dir!.path]),
-                  child: const Text('KLASÖRÜ AÇ'),
-                ),
-              TextButton(onPressed: () => Navigator.pop(ctx), child: Text('KAPAT', style: TextStyle(color: AppTheme.textMuted))),
-              ElevatedButton.icon(
-                onPressed: () => _openDownloadedFile(ctx, filePath),
-                icon: const Icon(Icons.open_in_new, size: 16),
-                label: const Text('AÇ'),
-              ),
-            ],
-          ),
-        );
-      }
+      if (context.mounted) _showDownloadCompleteDialog(context, filePath, dir);
     } catch (e) {
       stallTimer?.cancel();
       await subscription?.cancel();
@@ -364,6 +358,32 @@ class VersionCheckService {
         );
       }
     }
+  }
+
+  static void _showDownloadCompleteDialog(BuildContext context, String filePath, Directory dir) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.panelBackground,
+        title: const Text('İndirme Tamamlandı'),
+        content: Text(
+          'Güncelleme indirildi:\n\n$filePath',
+        ),
+        actions: [
+          if (Platform.isWindows)
+            TextButton(
+              onPressed: () => Process.run('explorer', [dir.path]),
+              child: const Text('KLASÖRÜ AÇ'),
+            ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('KAPAT', style: TextStyle(color: AppTheme.textMuted))),
+          ElevatedButton.icon(
+            onPressed: () => _openDownloadedFile(ctx, filePath),
+            icon: const Icon(Icons.open_in_new, size: 16),
+            label: const Text('AÇ'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// İndirilen dosyayı işletim sisteminin varsayılan uygulamasıyla açar

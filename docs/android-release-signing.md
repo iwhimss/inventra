@@ -15,12 +15,12 @@ Bu proje şu ana kadar Flutter'ın hazır şablonundaki **geçici** ayarı kulla
 PowerShell'de (`inventra_app/android` klasöründe):
 
 ```bash
-keytool -genkey -v -keystore ../inventra-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias inventra
+keytool -genkeypair -v -keystore inventra-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias inventra
 ```
 
 Sorulan bilgileri doldurun (ad, organizasyon vb. — gerçek olması şart değil) ve **iki şifre** belirlemeniz istenecek (keystore şifresi ve anahtar şifresi — aynı da olabilirler). **Bu şifreleri ve oluşan `inventra-release-key.jks` dosyasını güvenli bir yere yedekleyin** — kaybederseniz bir daha bu anahtarla imzalayamazsınız ve uygulamanın gelecekteki güncellemelerini mevcut kurulumların üzerine yükleyemezsiniz.
 
-`.jks` dosyası `inventra_app/` klasörünün köküne (yani `android/`'ın bir üstüne) kaydedilir — bu, repoya dahil edilmeyen (`.gitignore`'da zaten hariç) bir konumdur.
+`.jks` dosyası `inventra_app/android/` klasörüne kaydedilir — bu, repoya dahil edilmeyen (`.gitignore`'da zaten hariç) bir konumdur.
 
 ### 2. `key.properties` dosyasını oluşturun
 
