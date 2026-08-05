@@ -55,8 +55,13 @@ class StockImportService {
 
   /// Ayarlardan okuyup zamanlayıcıyı (yeniden) kurar. Ayarlar Sayfası'nda
   /// kaydet'e her basıldığında da bu tekrar çağrılır.
+  ///
+  /// Sadece masaüstünde (Windows/Linux/macOS) çalışır — izlenecek CSV dosyası
+  /// mağazadaki bilgisayarın yerel diski üzerinde olduğu için mobil cihazlarda
+  /// bu özelliğin hiçbir anlamı yok.
   static Future<void> init() async {
     _timer?.cancel();
+    if (kIsWeb || !(Platform.isWindows || Platform.isLinux || Platform.isMacOS)) return;
     try {
       final db = await DatabaseHelper.instance.globalDb;
       final rows = await db.query('settings');

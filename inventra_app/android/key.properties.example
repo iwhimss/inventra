@@ -1,0 +1,4 @@
+storePassword=BURAYA_KEYSTORE_SIFRENIZ
+keyPassword=BURAYA_ANAHTAR_SIFRENIZ
+keyAlias=inventra
+storeFile=../inventra-release-key.jks

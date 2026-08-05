@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:csv/csv.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
@@ -412,7 +413,9 @@ class _AppSettingsTabState extends ConsumerState<AppSettingsTab> {
           ]),
           const SizedBox(height: 16),
 
-          // Otomatik stok içe aktarma
+          // Otomatik stok içe aktarma — sadece masaüstünde (izlenecek CSV dosyası
+          // mağazadaki bilgisayarın yerel diskinde olduğu için mobilde anlamsız).
+          if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) ...[
           _sectionCard('Otomatik Stok İçe Aktarma (SahraSoft vb.)', Icons.sync_alt, [
             Text(
               'Başka bir programın periyodik olarak yazdığı bir stok CSV dosyasını izler; dosya değiştiğinde otomatik olarak Inventra\'ya aktarır.',
@@ -540,6 +543,7 @@ class _AppSettingsTabState extends ConsumerState<AppSettingsTab> {
             ),
           ]),
           const SizedBox(height: 16),
+          ],
 
           _sectionCard('Uygulama Bilgileri', Icons.info_outline, [
             Text('Inventra $_appVersion', style: const TextStyle(fontWeight: FontWeight.bold)),
